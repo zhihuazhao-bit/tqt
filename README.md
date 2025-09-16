@@ -1,0 +1,146 @@
+# [ECCV 2024] Textual Query-Driven Mask Transformer for Domain Generalized Segmentation
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/textual-query-driven-mask-transformer-for/domain-generalization-on-gta5-to-cityscapes)](https://paperswithcode.com/sota/domain-generalization-on-gta5-to-cityscapes?p=textual-query-driven-mask-transformer-for) <br />
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/textual-query-driven-mask-transformer-for/domain-generalization-on-gta-to-avg)](https://paperswithcode.com/sota/domain-generalization-on-gta-to-avg?p=textual-query-driven-mask-transformer-for) <br />
+### [**Textual Query-Driven Mask Transformer for Domain Generalized Segmentation**](https://arxiv.org/abs/2407.09033)
+>[Byeonghyun Pak](https://byeonghyunpak.github.io/)\*, [Byeongju Woo](https://byeongjuwoo.github.io/)\*, [Sunghwan Kim](https://sunghwan.me/)\*, [Dae-hwan Kim](https://scholar.google.com/citations?hl=en&user=_5Scn8YAAAAJ), [Hoseong Kim](https://scholar.google.com/citations?hl=en&user=Zy7Sz5UAAAAJ)†\
+>Agency for Defense Development\
+>ECCV 2024
+
+#### [[`Project Page`](https://byeonghyunpak.github.io/tqdm/)] [[`Paper`](https://arxiv.org/abs/2407.09033)]
+
+## Environment
+### Requirements
+- The requirements can be installed with:
+  
+  ```bash
+  conda create -n tqdm python=3.9 numpy=1.26.4
+  conda activate tqdm
+  conda install pytorch==2.0.1 torchvision==0.15.2 pytorch-cuda=11.8 -c pytorch -c nvidia
+  pip install -r requirements.txt
+  pip install xformers==0.0.20
+  pip install mmcv-full==1.5.3 
+  pip install mmcv-full==1.7.2 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/index.html
+  ```
+
+  ```bash
+  pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
+  APEX_CPP_EXT=1 APEX_CUDA_EXT=1 APEX_ALL_CONTRIB_EXT=1 pip install -v --no-build-isolation .
+  conda install -c conda-forge ninja
+  conda install -c conda-forge -c nvidia nccl
+  conda install -c conda-forge -c nvidia cudnn==8.9.2
+  conda install -c nvidia cuda-toolkit=12.1 cuda-runtime=12.1 cuda-nvcc=12.1
+  export CUDA_HOME="$CONDA_PREFIX"
+  export CUDA_PATH="$CONDA_PREFIX"
+  export PATH="$CONDA_PREFIX/bin:$PATH"
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$CONDA_PREFIX/lib64:${LD_LIBRARY_PATH}"
+  export CPATH="$CONDA_PREFIX/include:$CPATH" 
+  export LIBRARY_PATH="$CONDA_PREFIX/lib:$LIBRARY_PATH"
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+  conda list | grep -i cudnn
+  conda search -c conda-forge cudnn conda search -c nvidia cudnn
+  pip install mmcv_full=='1.7.0+torch2.1.1cu121' -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
+  APEX_CPP_EXT=1 APEX_CUDA_EXT=1 APEX_ALL_CONTRIB_EXT=1 pip install -v --no-build-isolation .
+  # 包含编译的cuda8.9.2.9
+  conda install pytorch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 pytorch-cuda=12.1 -c pytorch -c nvidia
+  conda install -c nvidia cuda-toolkit=12.1 cuda-nvcc=12.1
+  conda install -c conda-forge ninja
+  conda install -c conda-forge -c nvidia nccl
+  conda install libgl
+  ```
+  ![alt text](image-1.png)
+
+  ![alt text](image.png)
+
+  ```bash
+  pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+  pip install xformers==0.0.19
+  # 如果您使用python3.10，torch 2.1.0和2.1.1，cuda 11.8.0，12.1.0，可以按照如下方式安装 版本1.7.0+torch2.1.1cu121 1.7.0+torch2.1.0cu121 1.7.0+torch2.1.1cu118 1.7.0+torch2.1.0cu118
+  pip install mmcv_full==1.7.0 -f rm 
+  ```
+
+  ```bash
+  pip install torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 --index-url https://download.pytorch.org/whl/cu121
+  pip install mmcv_full=='1.7.0+torch2.1.1cu121' -f https://modelscope.oss-cn-beijing.aliyuncs.com/releases/repo.html
+  
+  ```
+
+  ```python
+  File "/root/miniconda3/envs/tqdm_py310/lib/python3.10/site-packages/mmcv/utils/config.py", line 508
+  try:
+      text, _ = FormatCode(text, style_config=yapf_style, verify=True)
+  except:
+      text, _ = FormatCode(text, style_config=yapf_style)
+  ```
+### Pre-trained VLM Models
+- Please download the pre-trained CLIP and EVA02-CLIP and save them in `./pretrained` folder.
+
+  | Model | Type | Link |
+  |-----|-----|:-----:|
+  | CLIP | `ViT-B-16.pt` |[official repo](https://github.com/openai/CLIP/blob/a1d071733d7111c9c014f024669f959182114e33/clip/clip.py#L30)|
+  | EVA02-CLIP | `EVA02_CLIP_L_336_psz14_s6B` |[official repo](https://github.com/baaivision/EVA/tree/master/EVA-CLIP#eva-02-clip-series)|
+
+### Checkpoints
+- You can download **tqdm** model checkpoints:
+
+  | Model | Pretrained | Trained on | Config | Link |
+  |-----|-----|-----|-----|:-----:|
+  | `tqdm-clip-vit-b-gta` | CLIP | GTA5 | [config](https://github.com/ByeongHyunPak/tqdm/blob/main/configs/tqdm/tqdm_clip_vit-l_1e-5_20k-g2c-512.py) |[download link](https://drive.google.com/file/d/1oKTIuPoXTJyOqqof1yqtb10m41nVkreM/view?usp=drive_link)|
+  | `tqdm-eva02-clip-vit-l-gta` | EVA02-CLIP | GTA5 | [config](https://github.com/ByeongHyunPak/tqdm/blob/main/configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py) |[download link](https://drive.google.com/file/d/1niKdUcoeP9Gd4F2O0LikTHBg39xHO8j0/view?usp=drive_link)|
+  | `tqdm-eva02-clip-vit-l-city` | EVA02-CLIP | Cityscapes | [config](https://github.com/ByeongHyunPak/tqdm/blob/main/configs/tqdm/tqdm_eva_vit-l_1e-4_20k-c2b-512.py) |[download link](https://drive.google.com/file/d/1_FXNthSshuvGraEX-2JxQWsGvtpeG9A7/view?usp=drive_link)|
+
+## Datasets
+- To set up datasets, please follow [the official **TLDR** repo](https://github.com/ssssshwan/TLDR/tree/main?tab=readme-ov-file#setup-datasets).
+  ```bash
+  python tools/convert_datasets/gta.py data/gta --nproc 8
+  python tools/convert_datasets/cityscapes.py data/cityscapes --nproc 8
+  ```
+- After downloading the datasets, edit the data folder root in [the dataset config files](https://github.com/ByeongHyunPak/tqdm/tree/main/configs/_base_/datasets) following your environment.
+  
+  ```python
+  src_dataset_dict = dict(..., data_root='[YOUR_DATA_FOLDER_ROOT]', ...)
+  tgt_dataset_dict = dict(..., data_root='[YOUR_DATA_FOLDER_ROOT]', ...)
+  ```
+## Train
+ ```
+ bash dist_train.sh configs/[TRAIN_CONFIG] [NUM_GPUs]
+```
+  - `[TRAIN_CONFIG]`: Train configuration file (e.g., `tqdm/tqdm_eve_vit-l_1e-5_20k-g2c-512.py`)
+  - `[NUM_GPUs]`: Number of GPUs used for training
+## Test
+To enable multi-scale flip augmentation during testing, use the `--aug-test` option.
+
+**Note:** The experiment results in our main paper were obtained **without** multi-scale flip augmentation.
+
+```
+bash dist_test.sh configs/[TEST_CONFIG] work_dirs/[MODEL] [NUM_GPUs] --eval mIoU
+```
+  - `[TRAIN_CONFIG]`: Test configuration file (e.g., `tqdm/tqdm_eve_vit-l_1e-5_20k-g2b-512.py`)
+  - `[MODEL]`: Model checkpoint (e.g., `tqdm_eve_vit-l_1e-5_20k-g2c-512/epoch_last.pth`)
+  - `[NUM_GPUs]`: Number of GPUs used for testing
+ 
+## The Most Relevant Files
+- [configs/tqdm/*](https://github.com/ByeongHyunPak/tqdm/tree/main/configs/tqdm) - Config files for the final tqdm
+- [models/segmentors/*](https://github.com/ByeongHyunPak/tqdm/tree/main/models/segmentors) - Overall tqdm framework
+- [mmseg/models/utils/assigner.py](https://github.com/ByeongHyunPak/tqdm/blob/main/mmseg/models/utils/assigner.py#L168) - Implementation of fixed matching
+- [mmseg/models/decode_heads/tqdm_head.py](https://github.com/ByeongHyunPak/tqdm/blob/main/mmseg/models/decode_heads/tqdm_head.py) - Our textual object query-based segmentation head
+- [mmseg/models/plugins/tqdm_msdeformattn_pixel_decoder.py](https://github.com/ByeongHyunPak/tqdm/blob/main/mmseg/models/plugins/tqdm_msdeformattn_pixel_decoder.py) - Our pixel decoder with *text-to-pixel attention*
+
+## Citation
+If you find our code helpful, please cite our paper:
+```bibtex
+@inproceedings{pak2024textual,
+  title={Textual Query-Driven Mask Transformer for Domain Generalized Segmentation},
+  author={Pak, Byeonghyun and Woo, Byeongju and Kim, Sunghwan and Kim, Dae-hwan and Kim, Hoseong},
+  booktitle={European Conference on Computer Vision},
+  pages={37--54},
+  year={2024},
+  organization={Springer}
+}
+```
+
+## Acknowledgements
+This project is based on the following open-source projects.
+We thank the authors for sharing their codes.
+- [MMSegmentation](https://github.com/open-mmlab/mmsegmentation)
+- [DAFormer](https://github.com/lhoyer/DAFormer)
+- [TLDR](https://github.com/ssssshwan/TLDR)

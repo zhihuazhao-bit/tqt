@@ -1,0 +1,1 @@
+bash dist_train.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py 4

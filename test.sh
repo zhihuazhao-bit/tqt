@@ -1,0 +1,1 @@
+bash dist_test.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py /root/tqdm/weight/tqdm_eva-vit-l_gta.pth 2 --eval mIoU
