@@ -36,7 +36,7 @@ def parse_args():
         help='train config file path')
     parser.add_argument(
         '--work-dir', 
-        default='./work_dirs',
+        default=None,
         help='the dir to save logs and models')
     parser.add_argument(
         '--load-from', help='the checkpoint file to load weights from')

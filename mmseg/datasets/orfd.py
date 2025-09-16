@@ -211,7 +211,8 @@ class ORFDDataset(CustomDataset):
             ret_metrics = pre_eval_to_metrics(results, metric)
 
         file_stats_pd = pd.DataFrame(file_stats).T
-        file_stats_pd.to_csv(osp.join(save_dir, 'eval_file_stats.csv'))
+        os.makedirs('./csv_result', exist_ok=True)
+        file_stats_pd.to_csv(osp.join('./csv_result', 'eval_file_stats.csv'))
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
             class_names = tuple(range(num_classes))
