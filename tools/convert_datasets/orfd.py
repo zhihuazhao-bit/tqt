@@ -100,7 +100,7 @@ def process_all_scenes(base_dir):
 # 使用示例
 if __name__ == "__main__":
     # ORFD 数据集根目录
-    base_dir = "/root/tqdm/datasets/ORFD"
+    base_dir = "/workspace/codelab/our/dataset/ORFD"
     
     # 处理所有场景
     process_all_scenes(base_dir)

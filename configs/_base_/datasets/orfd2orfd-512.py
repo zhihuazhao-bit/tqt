@@ -30,10 +30,10 @@ test_pipeline = [
             dict(type='ImageToTensor', keys=['img']),
             dict(type='Collect', keys=['img'])])]
 
-weather = ['snow', 'rain', 'fog', 'sun']
+weather = ['rain', 'fog', 'sun']
 src_dataset_dict = dict(
     type='ORFDDataset',
-    data_root='/root/tqdm/datasets/ORFD',
+    data_root='dataset/ORFD',
     img_dir='training/',
     ann_dir='training/',
     weather=weather,
@@ -41,7 +41,7 @@ src_dataset_dict = dict(
     
 tgt_dataset_dict = dict(
     type='ORFDDataset',
-    data_root='/root/tqdm/datasets/ORFD',
+    data_root='dataset/ORFD',
     img_dir='validation/',
     ann_dir='validation/',
     weather=weather,
@@ -49,7 +49,7 @@ tgt_dataset_dict = dict(
 
 test_dataset_dict = dict(
     type='ORFDDataset',
-    data_root='/root/tqdm/datasets/ORFD',
+    data_root='dataset/ORFD',
     img_dir='testing/',
     ann_dir='testing/',
     weather=['snow', 'rain', 'fog', 'sun'],
