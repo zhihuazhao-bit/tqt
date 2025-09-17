@@ -17,8 +17,8 @@ lr_config = dict(
     warmup_iters=1500,
     warmup_ratio=1e-06)
 runner = dict(type='IterBasedRunner', max_iters=5000)
-checkpoint_config = dict(by_epoch=False, interval=1000)
-evaluation = dict(interval=1000, metric='mIoU')
+checkpoint_config = dict(by_epoch=False, interval=2)
+evaluation = dict(interval=2, metric='mIoU', save_best='miou')
 IMG_MEAN = [122.7709383, 116.7460125, 104.09373615000001]
 IMG_VAR = [68.5005327, 66.6321579, 70.32316304999999]
 img_norm_cfg = dict(

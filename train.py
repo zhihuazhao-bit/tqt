@@ -32,7 +32,8 @@ def parse_args():
     parser.add_argument(
         '--config', 
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
-        default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
+        # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
+        default='configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512.py',
         help='train config file path')
     parser.add_argument(
         '--work-dir', 
@@ -171,6 +172,7 @@ def main():
 
     num_parameters = sum([p.numel() for p in model.parameters()])
     logger.info(f'#Params: {num_parameters}')
+    logger.info(model)
 
     # model parm init
     if hasattr(model, 'backbone'):

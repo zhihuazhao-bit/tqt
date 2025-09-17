@@ -17,8 +17,8 @@ lr_config = dict(
     warmup_iters=1500,
     warmup_ratio=1e-06)
 runner = dict(type='IterBasedRunner', max_iters=5000)
-checkpoint_config = dict(by_epoch=False, interval=1000)
-evaluation = dict(interval=1000, metric='mIoU')
+checkpoint_config = dict(by_epoch=False, interval=2)
+evaluation = dict(interval=2, metric='mIoU', save_best='mIoU')
 IMG_MEAN = [122.7709383, 116.7460125, 104.09373615000001]
 IMG_VAR = [68.5005327, 66.6321579, 70.32316304999999]
 img_norm_cfg = dict(
@@ -63,13 +63,13 @@ test_pipeline = [
             dict(type='Collect', keys=['img'])
         ])
 ]
-weather = ['rain', 'fog', 'sun']
+weather = ['snow']
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
     img_dir='training/',
     ann_dir='training/',
-    weather=['rain', 'fog', 'sun'],
+    weather=['snow'],
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(type='LoadAnnotations', reduce_zero_label=False),
@@ -94,7 +94,7 @@ tgt_dataset_dict = dict(
     data_root='dataset/ORFD',
     img_dir='validation/',
     ann_dir='validation/',
-    weather=['rain', 'fog', 'sun'],
+    weather=['snow'],
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(
@@ -147,7 +147,7 @@ data = dict(
             data_root='dataset/ORFD',
             img_dir='training/',
             ann_dir='training/',
-            weather=['rain', 'fog', 'sun'],
+            weather=['snow'],
             pipeline=[
                 dict(type='LoadImageFromFile'),
                 dict(type='LoadAnnotations', reduce_zero_label=False),
@@ -176,7 +176,7 @@ data = dict(
         data_root='dataset/ORFD',
         img_dir='validation/',
         ann_dir='validation/',
-        weather=['rain', 'fog', 'sun'],
+        weather=['snow'],
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(
@@ -222,17 +222,19 @@ data = dict(
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
+text_feature_dim = 512
+visual_feature_dim = 768
 model = dict(
     type='tqdm_EVA_CLIP',
-    token_embed_dim=768,
-    text_dim=768,
+    token_embed_dim=512,
+    text_dim=512,
     context_length=6,
     eva_clip=dict(
         model_name='EVA02-CLIP-B-16',
         pretrained='pretrained/EVA02_CLIP_B_psz16_s8B.pt',
         force_custom_clip=True,
         image_size=512,
-        out_indices=[7, 11, 15, 23],
+        out_indices=[3, 5, 7, 11],
         context_length=14,
         xattn=True),
     context_decoder=dict(
@@ -240,13 +242,13 @@ model = dict(
         transformer_width=256,
         transformer_heads=4,
         transformer_layers=3,
-        visual_dim=768,
+        visual_dim=512,
         dropout=0.1,
-        outdim=768,
+        outdim=512,
         style='pytorch'),
     decode_head=dict(
         type='tqdmHead',
-        in_channels=[1024, 1024, 1024, 1024],
+        in_channels=[768, 768, 768, 768],
         feat_channels=256,
         out_channels=256,
         in_index=[0, 1, 2, 3],
@@ -289,13 +291,13 @@ model = dict(
                     ],
                     ffn_cfgs=dict(
                         embed_dims=256,
-                        feedforward_channels=1024,
+                        feedforward_channels=768,
                         num_fcs=2,
                         act_cfg=dict(type='ReLU', inplace=True),
                         ffn_drop=0.0,
                         dropout_layer=None,
                         add_identity=True),
-                    feedforward_channels=2048,
+                    feedforward_channels=1536,
                     operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
                                      'ffn', 'norm')),
                 init_cfg=None),
@@ -321,13 +323,13 @@ model = dict(
                     batch_first=False),
                 ffn_cfgs=dict(
                     embed_dims=256,
-                    feedforward_channels=2048,
+                    feedforward_channels=1536,
                     num_fcs=2,
                     act_cfg=dict(type='ReLU', inplace=True),
                     ffn_drop=0.0,
                     dropout_layer=None,
                     add_identity=True),
-                feedforward_channels=2048,
+                feedforward_channels=1536,
                 operation_order=('cross_attn', 'norm', 'self_attn', 'norm',
                                  'ffn', 'norm')),
             init_cfg=None),
@@ -363,7 +365,7 @@ model = dict(
             max_per_image=100,
             iou_thr=0.8,
             filter_low_score=True),
-        text_proj=dict(text_in_dim=768, text_out_dim=256)),
+        text_proj=dict(text_in_dim=512, text_out_dim=256)),
     identity_head=dict(
         type='IdentityHead',
         in_channels=1,

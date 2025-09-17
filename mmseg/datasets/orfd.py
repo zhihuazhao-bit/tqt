@@ -3,6 +3,7 @@ import os.path as osp
 import numpy as np
 import pandas as pd
 import warnings
+import time
 from . import CityscapesDataset
 from .builder import DATASETS
 from .custom import CustomDataset
@@ -28,7 +29,8 @@ class ORFDDataset(CustomDataset):
                     'x2021_0223_1856',
                 ],
                 'sun':[
-
+                    # from test datset
+                    'y0602_1330',
                 ],
                 'rain':[
                     'y0609_1947',
@@ -43,7 +45,6 @@ class ORFDDataset(CustomDataset):
                     'x2021_0223_1756',
                 ],
                 'sun':[
-                    'y0602_1330',
                     'y0613_1220',
                     'y0613_1242',
                 ],
@@ -58,7 +59,7 @@ class ORFDDataset(CustomDataset):
             },
             'train':{
                 'snow':[
-                    'x2021_0223_1856',
+                    # 'x2021_0223_1856',
                     'x2021_0222_1810',
                     'x2021_0223_1310',
                     'x2021_0223_1316',
@@ -90,6 +91,8 @@ class ORFDDataset(CustomDataset):
                 ]
             }
         }
+        # 构建 scene 到 weather 的反向字典
+        self.scene_to_weather = {scene: weather for mode in ['train', 'val', 'test'] for weather, scenes in self.all_scene_map[mode].items() for scene in scenes}
         self.all_scene = []
         self.weather = kwargs['weather']
         for weather in self.weather:
@@ -147,9 +150,12 @@ class ORFDDataset(CustomDataset):
                         img_info['ann'] = dict(seg_map=seg_map)
                     img_infos.append(img_info)
         else:
+            all_scene = []
+            dataset_mode = os.path.split(img_dir)[-1]
             for scene in self.all_scene:
                 sub_img_dir = os.path.join(img_dir, scene, 'image_data')
                 if os.path.exists(sub_img_dir):
+                    all_scene.append(scene)
                     for img in mmcv.scandir(sub_img_dir, img_suffix, recursive=True):
                         img_info = dict(filename=os.path.join(scene, 'image_data', img))
                         if ann_dir is not None:
@@ -157,10 +163,52 @@ class ORFDDataset(CustomDataset):
                             img_info['ann'] = dict(seg_map=os.path.join(scene, 'gt_image', seg_map))
                             img_infos.append(img_info)
             img_infos = sorted(img_infos, key=lambda x: x['filename'])
-
-        print_log(f'Loaded {len(img_infos)} images from {self.weather}', logger=get_root_logger())
+        # img_infos = img_infos[0:50]
+        print_log(f'Loaded {dataset_mode} dataset {len(img_infos)} images from {all_scene} in {self.weather}', logger=get_root_logger())
         return img_infos
     
+    def pretty_print_conf_mat(self, conf_mat: np.ndarray, class_names=None, float_fmt="{:.0f}"):
+        """使用 PrettyTable 打印混淆矩阵。
+
+        Args:
+            conf_mat (np.ndarray): 形状 (C,C)
+            class_names (List[str]|None): 类别名称；为 None 时使用索引 0..C-1
+            float_fmt (str): 单元格数字格式
+        """
+        if isinstance(class_names, tuple):
+            class_names = list(class_names)
+        if conf_mat.ndim != 2 or conf_mat.shape[0] != conf_mat.shape[1]:
+            print("[Warn] 非方阵，无法格式化：", conf_mat.shape)
+            print(conf_mat)
+            return
+        C = conf_mat.shape[0]
+        if class_names is None or len(class_names) != C:
+            class_names = [f"C{i}" for i in range(C)]
+        if PrettyTable is None:
+            print("PrettyTable 未安装，使用原始 numpy 输出。可: pip install prettytable")
+            print(conf_mat)
+            return
+        table = PrettyTable()
+        table.field_names = ["Actual\\Pred"] + class_names + ["RowSum", "Recall"]
+        col_sums = conf_mat.sum(axis=0) + 1e-12
+        row_sums = conf_mat.sum(axis=1) + 1e-12
+        for i in range(C):
+            row_vals = []
+            for j in range(C):
+                row_vals.append(float_fmt.format(conf_mat[i, j]))
+            row_sum = row_sums[i]
+            recall = conf_mat[i, i] / row_sum if row_sum > 0 else 0.0
+            table.add_row([class_names[i]] + row_vals + [float_fmt.format(row_sum), f"{recall*100:.2f}%"])
+        # 添加列统计 (Precision)
+        prec_row = ["Precision"]
+        for j in range(C):
+            prec = conf_mat[j, j] / col_sums[j] if col_sums[j] > 0 else 0.0
+            prec_row.append(f"{prec*100:.2f}%")
+        prec_row += [float_fmt.format(conf_mat.sum()), "-"]
+        table.add_row(prec_row)
+        # print_log("\nConfusion Matrix (rows=Actual, cols=Pred):")
+        print_log(table)
+
     def evaluate(self,
                  results,
                  metric='mIoU',
@@ -212,12 +260,38 @@ class ORFDDataset(CustomDataset):
 
         file_stats_pd = pd.DataFrame(file_stats).T
         os.makedirs('./csv_result', exist_ok=True)
-        file_stats_pd.to_csv(osp.join('./csv_result', 'eval_file_stats.csv'))
+        # 根据 scene 列生成 weather 列
+        file_stats_pd['weather'] = file_stats_pd['scene'].apply(lambda x: self.scene_to_weather.get(x, 'unknown'))
+        file_stats_pd.to_csv(osp.join('./csv_result', f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+        
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
             class_names = tuple(range(num_classes))
         else:
             class_names = self.CLASSES
+
+        class_num = len(class_names)
+        for scene, group in file_stats_pd.groupby('scene'):
+            conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
+            for i in range(class_num):
+                class_intersect = group[f'class{i}_intersect'].sum()
+                class_area_label = group[f'class{i}_label'].sum()
+                class_pred_label = group[f'class{i}_pred_label'].sum()
+                conf_mat[i, i] = class_intersect  # TP
+                conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
+            print_log(f'Confusion Matrix for scene {scene}:')
+            self.pretty_print_conf_mat(conf_mat, class_names=class_names)
+
+        for weather, group in file_stats_pd.groupby('weather'): 
+            conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
+            for i in range(class_num):
+                class_intersect = group[f'class{i}_intersect'].sum()
+                class_area_label = group[f'class{i}_label'].sum()
+                class_pred_label = group[f'class{i}_pred_label'].sum()
+                conf_mat[i, i] = class_intersect  # TP
+                conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
+            print_log(f'Confusion Matrix for weather {weather}:')
+            self.pretty_print_conf_mat(conf_mat, class_names=class_names)
 
         # summary table
         ret_metrics_summary = OrderedDict({

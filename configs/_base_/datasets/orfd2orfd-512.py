@@ -30,7 +30,7 @@ test_pipeline = [
             dict(type='ImageToTensor', keys=['img']),
             dict(type='Collect', keys=['img'])])]
 
-weather = ['rain', 'fog', 'sun']
+weather = ['snow']
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
