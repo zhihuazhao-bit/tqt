@@ -63,13 +63,13 @@ test_pipeline = [
             dict(type='Collect', keys=['img'])
         ])
 ]
-weather = ['snow']
+weather = ['sun']
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
     img_dir='training/',
     ann_dir='training/',
-    weather=['snow'],
+    weather=['sun'],
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(type='LoadAnnotations', reduce_zero_label=False),
@@ -94,7 +94,7 @@ tgt_dataset_dict = dict(
     data_root='dataset/ORFD',
     img_dir='validation/',
     ann_dir='validation/',
-    weather=['snow'],
+    weather=['sun'],
     pipeline=[
         dict(type='LoadImageFromFile'),
         dict(
@@ -147,7 +147,7 @@ data = dict(
             data_root='dataset/ORFD',
             img_dir='training/',
             ann_dir='training/',
-            weather=['snow'],
+            weather=['sun'],
             pipeline=[
                 dict(type='LoadImageFromFile'),
                 dict(type='LoadAnnotations', reduce_zero_label=False),
@@ -176,7 +176,7 @@ data = dict(
         data_root='dataset/ORFD',
         img_dir='validation/',
         ann_dir='validation/',
-        weather=['snow'],
+        weather=['sun'],
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(
@@ -386,5 +386,5 @@ optimizer = dict(
             backbone=dict(lr_mult=0.1),
             text_encoder=dict(lr_mult=0.0),
             norm=dict(decay_mult=0.0))))
-work_dir = './work_dirs_o2o_nosnow_base/tqdm_eva_vit-b_1e-5_5k-o2o-512'
+work_dir = './work_dirs_o2o_sun_base/tqdm_eva_vit-b_1e-5_5k-o2o-512'
 gpu_ids = range(0, 1)

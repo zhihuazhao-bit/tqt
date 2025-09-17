@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/default_runtime.py',
     '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-512.py']
+    '../_base_/datasets/orfd2orfd-512-sun.py']
 
 data = dict(
     samples_per_gpu=8,
@@ -188,4 +188,4 @@ optimizer = dict(type='AdamW', lr=1e-5, weight_decay=1e-4,
                         'text_encoder': dict(lr_mult=0.0),
                         'norm': dict(decay_mult=0.)}))
 
-work_dir = './work_dirs_o2o_nosnow_base'
+work_dir = './work_dirs_o2o_sun_base'
