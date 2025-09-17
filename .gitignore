@@ -128,7 +128,7 @@ configs/generated/
 
 # pre-trained
 pretrained
-work_dirs/
+work_dirs
 csv_result/
 plot/
 test_script/

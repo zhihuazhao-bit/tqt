@@ -326,6 +326,7 @@ class ORFDDataset(CustomDataset):
         print_log('\n' + summary_table_data.get_string(), logger=logger)
 
         if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
             with open(os.path.join(save_dir, 'metrics.txt'), 'w') as w:
                 w.write('per class results:')
                 w.write('\n' + class_table_data.get_string())

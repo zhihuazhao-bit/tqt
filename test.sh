@@ -1,1 +1,1 @@
-bash dist_test.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py /root/tqdm/weight/tqdm_eva-vit-l_gta.pth 2 --eval mIoU
+bash dist_test.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512.py /root/tqdm/work_dirs_o2o_sun_base/tqdm_eva_vit-b_1e-5_5k-o2o-512/best_mIoU_iter_5000.pth 2 --eval mIoU
