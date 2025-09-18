@@ -16,7 +16,8 @@ from collections import OrderedDict
 
 @DATASETS.register_module()
 class ORFDDataset(CustomDataset):
-    CLASSES = ('notraversable', 'traversable')
+    # CLASSES = ('notraversable', 'traversable')
+    CLASSES = ('Vehicle-accessible areas', 'High-risk terrain blocks')
     PALETTE = [[0,0,0],[0,128,0]]
 
     def __init__(self, **kwargs):
@@ -99,7 +100,7 @@ class ORFDDataset(CustomDataset):
             self.all_scene += self.all_scene_map['train'][weather]
             self.all_scene += self.all_scene_map['val'][weather]
             self.all_scene += self.all_scene_map['test'][weather]
-
+        print_log(f"Classes: {self.CLASSES}")
         
         super(ORFDDataset, self).__init__(
             img_suffix='.png',
