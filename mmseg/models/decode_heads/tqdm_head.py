@@ -440,10 +440,12 @@ class tqdmHead(BaseDecodeHead):
                  h, w).
         """
         batch_size = len(img_metas)
+        # 这一步使用text作为key和value，使用visual作为query，构建多尺度的特征。
         mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
         # multi_scale_memorys (from low resolution to high resolution)
         decoder_inputs = []
         decoder_positional_encodings = []
+        # 构建每一层的位置编码
         for i in range(self.num_transformer_feat_level):
             decoder_input = self.decoder_input_projs[i](multi_scale_memorys[i])
             # shape (batch_size, c, h, w) -> (h*w, batch_size, c)
@@ -480,7 +482,7 @@ class tqdmHead(BaseDecodeHead):
             attn_mask[torch.where(
                 attn_mask.sum(-1) == attn_mask.shape[-1])] = False
 
-            # cross_attn + self_attn
+            # 进行预测，cross_attn + self_attn
             layer = self.transformer_decoder.layers[i]
             attn_masks = [attn_mask, None]
             query_feat = layer(

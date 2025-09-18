@@ -40,6 +40,8 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         self.tau = 0.07
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
+        self.prefix_text = args.get('prefix_text', 'a clean origami of a ')
+        print(f"prefix_text: '{self.prefix_text}'")
 
         self.num_classes = len(class_names)
         self.context_length = context_length
@@ -74,7 +76,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         # language regularization
         self.reg_T0 = torch.cat([tokenize(
-                texts=f"a clean origami of a {c}",
+                texts=f"{self.prefix_text}{c}",
                 context_length=self.text_encoder.context_length) 
             for c in class_names]).to('cuda')
         self.reg_T0 = F.normalize(self.text_encoder(self.reg_T0, context=None), dim=-1, p=2)
@@ -86,6 +88,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
     def after_extract_feat(self, x):
         x_orig = list(x[:-1])
+        # global_feat是开头的那个cls token， visual_embeddings是后面的patch tokens
         global_feat, visual_embeddings = x[-1]
         b_size = global_feat.shape[0]
 
@@ -93,12 +96,14 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         text_embeddings = self.text_encoder(self.texts, context=self.contexts).expand(b_size, -1, -1)
 
         if self.context_decoder is not None:
+            # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
             text_diff = self.context_decoder(text_embeddings, visual_context)
             text_embeddings = text_embeddings + self.gamma * text_diff
         ret_text_emb = text_embeddings
 
         visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
         text_embeddings = F.normalize(text_embeddings, dim=-1, p=2)
+        # 做一次初步的分割, 余弦相似度
         score_map = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
 
         return x_orig, score_map, ret_text_emb, global_feat
@@ -122,13 +127,16 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         # vision regularization
         if self.visual_reg is True:
             with torch.no_grad():
+                # _是什么？
                 global_feat_0, _ = self.reg_E0.extract_feats(img)[-1]
+            # 只限制第一个分类的距离，不限制patch的距离。
             loss_reg_v = nn.MSELoss(reduction='mean')(global_feat, global_feat_0)
             loss_reg_v = {'loss' : loss_reg_v}
             losses.update(add_prefix(loss_reg_v, 'reg.visual'))
 
         # vision-language regularization
         if self.identity_head is not None:
+            # identity是什么？
             loss_score_map = self.identity_head.forward_train(
                 score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
             losses.update(add_prefix(loss_score_map, 'scr_map'))
