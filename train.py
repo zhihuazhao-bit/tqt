@@ -146,7 +146,7 @@ def main():
     cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
     run = swanlab.init(
         # 设置项目
-        project_name='tqdm-off',
+        project='tqdm-off',
         experiment_name=osp.basename(args.config),
         config=cfg._cfg_dict,
     )
