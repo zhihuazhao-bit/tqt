@@ -188,4 +188,4 @@ optimizer = dict(type='AdamW', lr=1e-5, weight_decay=1e-4,
                         'text_encoder': dict(lr_mult=0.0),
                         'norm': dict(decay_mult=0.)}))
 
-work_dir = './work_dirs_o2o_sun_base'
+work_dir = './work_dirs/work_dirs_o2o_sun_base'
