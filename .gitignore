@@ -127,8 +127,8 @@ configs/generated/
 *.pgf
 
 # pre-trained
-pretrained
-work_dirs
+pretrained/
+work_dirs/
 csv_result/
 plot/
 test_script/
