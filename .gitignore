@@ -127,6 +127,7 @@ configs/generated/
 *.pgf
 
 # pre-trained
+swanlog/
 pretrained/
 weight/
 work_dirs/

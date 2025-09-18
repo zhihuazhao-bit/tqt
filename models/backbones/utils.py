@@ -162,7 +162,7 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77, truncate: b
                 tokens = tokens[:context_length]
                 tokens[-1] = eot_token
             else:
-                raise RuntimeError(f"Input {texts[i]} is {len(texts[i])} too long for context length {context_length}")
+                raise RuntimeError(f"Input {texts[i]} is {len(tokens)} too long for context length {context_length}")
         result[i, :len(tokens)] = torch.tensor(tokens)
 
     # print(result.shape)

@@ -22,6 +22,8 @@ class ORFDDataset(CustomDataset):
 
     def __init__(self, **kwargs):
         assert kwargs.get('split') in [None, 'train']
+        if kwargs.get('class_names') is not None:
+            self.CLASSES = kwargs.get('class_names')
         if 'split' in kwargs:
             kwargs.pop('split')
         self.all_scene_map = {

@@ -6,7 +6,7 @@ import time
 import mmcv
 import torch
 import argparse
-
+import swanlab
 from mmcv.runner import init_dist
 from mmcv.utils import Config, DictAction, get_git_hash
 
@@ -89,6 +89,22 @@ def main():
     args = parse_args()
 
     cfg = Config.fromfile(args.config)
+    # 导入 SimpleTokenizer
+    from models.backbones.utils import SimpleTokenizer
+
+    # 初始化 SimpleTokenizer
+    tokenizer = SimpleTokenizer()
+    import numpy as np
+    tokens = np.zeros((len(cfg.class_names)), dtype=np.int64)
+    sot_token = tokenizer.encoder["<|startoftext|>"]
+    eot_token = tokenizer.encoder["<|endoftext|>"]
+    # 示例：对 class_names 中的每个类别名称进行分词
+    for i, class_name in enumerate(cfg.class_names):
+        token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
+        tokens[i] = len(token)
+    cfg.model.context_length = int(tokens.max())
+    cfg.model.eva_clip.context_length = int(tokens.max())+8
+
     if args.options is not None:
         cfg.merge_from_dict(args.options)
 
@@ -128,11 +144,19 @@ def main():
 
     # dump config
     cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
+    run = swanlab.init(
+        # 设置项目
+        project_name='tqdm-off',
+        experiment_name=osp.basename(args.config),
+        config=cfg._cfg_dict,
+    )
 
     # init the logger before other steps
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     log_file = osp.join(cfg.work_dir, f'{timestamp}.log')
     logger = get_root_logger(log_file=log_file, log_level=cfg.log_level)
+
+    logger.info(f'Model Context Length: {cfg.model.context_length}, and EVA-CLIP Context Length: {cfg.model.eva_clip.context_length}')
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged

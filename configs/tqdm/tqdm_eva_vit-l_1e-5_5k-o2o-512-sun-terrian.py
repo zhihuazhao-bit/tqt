@@ -10,33 +10,31 @@ data = dict(
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
-text_feature_dim = 512
-visual_feature_dim = 768
 model = dict(
     type='tqdm_EVA_CLIP',
-    token_embed_dim=text_feature_dim,
-    text_dim=text_feature_dim,
-    context_length=24,
+    token_embed_dim=768,
+    text_dim=768,
+    context_length=6,
     eva_clip=dict(
-        model_name='EVA02-CLIP-B-16',
-        pretrained='weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt',
+        model_name='EVA02-CLIP-L-14-336',
+        pretrained='weight/pretrained/EVA02_CLIP_L_336_psz14_s6B.pt',
         force_custom_clip=True,
         image_size=512,
-        out_indices=[3, 5, 7, 11],
-        context_length=32,
+        out_indices=[7, 11, 15, 23],
+        context_length=14,
         xattn=True),
     context_decoder=dict(
         type='ContextDecoder',
         transformer_width=256,
         transformer_heads=4,
         transformer_layers=3,
-        visual_dim=text_feature_dim,
+        visual_dim=768,
         dropout=0.1,
-        outdim=text_feature_dim,
+        outdim=768,
         style='pytorch'),
     decode_head=dict(
         type='tqdmHead',
-        in_channels=[visual_feature_dim, visual_feature_dim, visual_feature_dim, visual_feature_dim],
+        in_channels=[1024, 1024, 1024, 1024],
         feat_channels=256,
         out_channels=256,
         in_index=[0, 1, 2, 3],
@@ -81,13 +79,13 @@ model = dict(
                     ],
                     ffn_cfgs=dict(
                         embed_dims=256,
-                        feedforward_channels=visual_feature_dim, # reduced from 2048,
+                        feedforward_channels=1024, # reduced from 2048,
                         num_fcs=2,
                         act_cfg=dict(type='ReLU', inplace=True),
                         ffn_drop=0.0,
                         dropout_layer=None,
                         add_identity=True),
-                    feedforward_channels=visual_feature_dim*2,
+                    feedforward_channels=2048,
                     operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
                                     'ffn', 'norm')), # same order with mask2former / 
                     # operation_order=('self_attn', 'norm', 'cross_attn', 'norm',
@@ -115,13 +113,13 @@ model = dict(
                     batch_first=False),
                 ffn_cfgs=dict(
                     embed_dims=256,
-                    feedforward_channels=visual_feature_dim*2,
+                    feedforward_channels=2048,
                     num_fcs=2,
                     act_cfg=dict(type='ReLU', inplace=True),
                     ffn_drop=0.0,
                     dropout_layer=None,
                     add_identity=True),
-                feedforward_channels=visual_feature_dim*2,
+                feedforward_channels=2048,
                 operation_order=('cross_attn', 'norm', 'self_attn', 'norm',
                                  'ffn', 'norm')),
             init_cfg=None),
@@ -165,7 +163,7 @@ model = dict(
             # it will filter mask area where score is less than 0.5 .
             filter_low_score=True), 
         text_proj=dict(
-            text_in_dim=text_feature_dim,
+            text_in_dim=768,
             text_out_dim=256),
     ),
     identity_head=dict(
@@ -188,4 +186,4 @@ optimizer = dict(type='AdamW', lr=1e-5, weight_decay=1e-4,
                         'text_encoder': dict(lr_mult=0.0),
                         'norm': dict(decay_mult=0.)}))
 
-work_dir = './work_dirs/work_dirs_o2o_sun_base'
+work_dir = './work_dirs_o2o_sun'

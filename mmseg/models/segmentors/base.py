@@ -149,6 +149,8 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
             loss=loss,
             log_vars=log_vars,
             num_samples=len(data_batch['img_metas']))
+        import swanlab
+        swanlab.log(log_vars)
 
         return outputs
 
