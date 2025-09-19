@@ -50,7 +50,7 @@ def parse_args():
         help='show results')
     parser.add_argument(
         '--show-dir', 
-        default='./work_dirs/test_samples_mFscore_csv',
+        default='./work_dirs/test/',
         help='directory where painted images will be saved')
     parser.add_argument(
         '--gpu-collect',
@@ -80,7 +80,7 @@ def parse_args():
     parser.add_argument(
         '--save_dir',
         type=str,
-        default='./work_dirs/test_samples_mFscore_csv')
+        default='./work_dirs/test/')
     parser.add_argument('--local-rank', type=int, default=0)
     parser.add_argument('--aug_ratio_start', type=float, default=-1)
     parser.add_argument('--exp_tag', default=None)
@@ -92,6 +92,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+    config_name = os.path.basename(args.config).split('.')[0]
+    if args.show_dir:
+        args.show_dir = os.path.join(args.show_dir, config_name)
+    if args.save_dir:
+        args.save_dir = os.path.join(args.save_dir, config_name)
 
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \

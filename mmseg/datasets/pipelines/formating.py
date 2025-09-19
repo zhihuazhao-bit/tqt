@@ -211,6 +211,12 @@ class DefaultFormatBundle(object):
                 to_tensor(results['gt_semantic_seg'][None,
                                                      ...].astype(np.int64)),
                 stack=True)
+        if 'sne' in results:
+            # convert to long
+            results['sne'] = DC(
+                to_tensor(results['sne'][None,
+                                          ...].astype(np.float32)),
+                stack=True)
         return results
 
     def __repr__(self):
@@ -250,6 +256,11 @@ class DefaultFormatBundle(object):
             results['gt_semantic_seg'] = DC(to_tensor(
                 results['gt_semantic_seg'][None, ...].astype(np.int64)),
                                             stack=True)
+        if 'sne' in results:
+            sne = results['sne']
+            sne = np.ascontiguousarray(sne.transpose(2, 0, 1))
+            # convert to long
+            results['sne'] = DC(to_tensor(sne), stack=True)
         if 'gt_masks' in results:
             results['gt_masks'] = DC(to_tensor(results['gt_masks']))
         if 'gt_labels' in results:

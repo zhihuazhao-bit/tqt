@@ -327,10 +327,15 @@ class Pad(object):
         if self.size is not None:
             padded_img = mmcv.impad(
                 results['img'], shape=self.size, pad_val=self.pad_val)
+            padded_sne = mmcv.impad(
+                results['sne'], shape=self.size, pad_val=self.pad_val)
         elif self.size_divisor is not None:
             padded_img = mmcv.impad_to_multiple(
                 results['img'], self.size_divisor, pad_val=self.pad_val)
+            padded_sne = mmcv.impad_to_multiple(
+                results['sne'], self.size_divisor, pad_val=self.pad_val)
         results['img'] = padded_img
+        results['sne'] = padded_sne
         results['pad_shape'] = padded_img.shape
         results['pad_fixed_size'] = self.size
         results['pad_size_divisor'] = self.size_divisor
@@ -563,6 +568,10 @@ class RandomCrop(object):
         # crop semantic seg
         for key in results.get('seg_fields', []):
             results[key] = self.crop(results[key], crop_bbox)
+        
+        # crop sne
+        if 'sne' in results.keys():
+            results['sne'] = self.crop(results['sne'], crop_bbox)
 
         return results
 

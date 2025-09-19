@@ -33,7 +33,7 @@ def parse_args():
         '--config', 
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
-        default='configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
+        default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
         help='train config file path')
     parser.add_argument(
         '--work-dir', 

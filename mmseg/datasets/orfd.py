@@ -1,6 +1,8 @@
 import os
 import os.path as osp
 import numpy as np
+import cv2
+import torch
 import pandas as pd
 import warnings
 import time
@@ -94,6 +96,7 @@ class ORFDDataset(CustomDataset):
                 ]
             }
         }
+        
         # 构建 scene 到 weather 的反向字典
         self.scene_to_weather = {scene: weather for mode in ['train', 'val', 'test'] for weather, scenes in self.all_scene_map[mode].items() for scene in scenes}
         self.all_scene = []
@@ -265,7 +268,10 @@ class ORFDDataset(CustomDataset):
         os.makedirs('./csv_result', exist_ok=True)
         # 根据 scene 列生成 weather 列
         file_stats_pd['weather'] = file_stats_pd['scene'].apply(lambda x: self.scene_to_weather.get(x, 'unknown'))
-        file_stats_pd.to_csv(osp.join('./csv_result', f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+        if save_dir is not None:
+            file_stats_pd.to_csv(osp.join(save_dir, f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+        else:
+            file_stats_pd.to_csv(osp.join('./csv_result', f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
         
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
@@ -353,3 +359,61 @@ class ORFDDataset(CustomDataset):
             })
 
         return eval_results
+
+    def pre_pipeline(self, results):
+        """Prepare results dict for pipeline."""
+        results['seg_fields'] = []
+        results['img_prefix'] = self.img_dir
+        results['seg_prefix'] = self.ann_dir
+        if self.custom_classes:
+            results['label_map'] = self.label_map
+
+    def __getitem__(self, idx):
+        """Get training/test data after pipeline.
+
+        Args:
+            idx (int): Index of data.
+
+        Returns:
+            dict: Training/test data (with annotation if `test_mode` is set
+                False).
+        """
+
+        if self.test_mode:
+            return self.prepare_test_img(idx)
+        else:
+            return self.prepare_train_img(idx)
+
+    def prepare_train_img(self, idx):
+        """Get training data and annotations after pipeline.
+
+        Args:
+            idx (int): Index of data.
+
+        Returns:
+            dict: Training data and annotation after pipeline with new keys
+                introduced by pipeline.
+        """
+
+        img_info = self.img_infos[idx]
+        sne_info = img_info['filename'].replace("image_data", "surface_normal_d2net_v3")
+        ann_info = self.get_ann_info(idx)
+        results = dict(img_info=img_info, ann_info=ann_info, sne=sne_info)
+        self.pre_pipeline(results)
+        return self.pipeline(results)
+
+    def prepare_test_img(self, idx):
+        """Get testing data after pipeline.
+
+        Args:
+            idx (int): Index of data.
+
+        Returns:
+            dict: Testing data after pipeline with new keys introduced by
+                pipeline.
+        """
+
+        img_info = self.img_infos[idx]
+        results = dict(img_info=img_info)
+        self.pre_pipeline(results)
+        return self.pipeline(results)
