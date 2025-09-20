@@ -111,6 +111,22 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = mmcv.Config.fromfile(args.config)
+    # 导入 SimpleTokenizer
+    from models.backbones.utils import SimpleTokenizer
+
+    # 初始化 SimpleTokenizer
+    tokenizer = SimpleTokenizer()
+    import numpy as np
+    tokens = np.zeros((len(cfg.class_names)), dtype=np.int64)
+    sot_token = tokenizer.encoder["<|startoftext|>"]
+    eot_token = tokenizer.encoder["<|endoftext|>"]
+    # 示例：对 class_names 中的每个类别名称进行分词
+    for i, class_name in enumerate(cfg.class_names):
+        token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
+        tokens[i] = len(token)
+    cfg.model.context_length = int(tokens.max())
+    cfg.model.eva_clip.context_length = int(tokens.max())+8
+    
     if args.options is not None:
         cfg.merge_from_dict(args.options)
 
