@@ -17,7 +17,7 @@ model = dict(
     context_length=6,
     eva_clip=dict(
         model_name='EVA02-CLIP-L-14-336',
-        pretrained='pretrained/EVA02_CLIP_L_336_psz14_s6B.pt',
+        pretrained='weight/pretrained/EVA02_CLIP_L_336_psz14_s6B.pt',
         force_custom_clip=True,
         image_size=512,
         out_indices=[7, 11, 15, 23],
@@ -186,4 +186,4 @@ optimizer = dict(type='AdamW', lr=1e-5, weight_decay=1e-4,
                         'text_encoder': dict(lr_mult=0.0),
                         'norm': dict(decay_mult=0.)}))
 
-work_dir = './work_dirs_o2o_nosnow'
+work_dir = './work_dirs'

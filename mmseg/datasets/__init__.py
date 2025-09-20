@@ -10,6 +10,7 @@ from .uda_dataset import UDADataset
 from .ug_dataset import UGDataset
 from .ade import ADE20KDataset
 from .orfd import ORFDDataset
+from .goose import GooseDataset
 
 __all__ = [
     'ADE20KDataset',
@@ -27,5 +28,6 @@ __all__ = [
     'MapillaryDataset',
     'UDADataset',
     'UGDataset',
-    'ORFDDataset'
+    'ORFDDataset',
+    'GooseDataset'
 ]

@@ -31,12 +31,15 @@ test_pipeline = [
             dict(type='Collect', keys=['img'])])]
 
 weather = ['snow']
+class_names=('notraversable', 'traversable')
+
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
     img_dir='training/',
     ann_dir='training/',
     weather=weather,
+    class_names=class_names,
     pipeline=train_pipeline)
     
 tgt_dataset_dict = dict(
@@ -45,6 +48,16 @@ tgt_dataset_dict = dict(
     img_dir='validation/',
     ann_dir='validation/',
     weather=weather,
+    class_names=class_names,
+    pipeline=test_pipeline)
+
+int_dataset_dict = dict(
+    type='GooseDataset',
+    data_root='dataset/goose',
+    img_dir='test/images/',
+    ann_dir='test/labels/',
+    weather=['snow', 'rain', 'fog', 'sun'],
+    class_names=class_names,
     pipeline=test_pipeline)
 
 test_dataset_dict = dict(
@@ -53,6 +66,7 @@ test_dataset_dict = dict(
     img_dir='testing/',
     ann_dir='testing/',
     weather=['snow', 'rain', 'fog', 'sun'],
+    class_names=class_names,
     pipeline=test_pipeline)
 
 data = dict(
@@ -63,4 +77,5 @@ data = dict(
         source=src_dataset_dict,
         rare_class_sampling=None),
     val=tgt_dataset_dict,
-    test=test_dataset_dict)
+    test=test_dataset_dict,
+    int=int_dataset_dict)
