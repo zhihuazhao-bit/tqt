@@ -1,1 +1,1 @@
-bash dist_train.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py 4
+bash dist_train.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py 2

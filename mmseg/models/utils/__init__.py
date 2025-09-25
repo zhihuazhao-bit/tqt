@@ -15,7 +15,7 @@ from .assigner import MaskHungarianAssigner
 from .point_sample import get_uncertain_point_coords_with_randomness
 from .positional_encoding import (LearnedPositionalEncoding,
                                   SinePositionalEncoding)
-from .transformer import (DetrTransformerDecoder, DetrTransformerDecoderLayer,
+from .transformer import (DetrTransformerDecoder, DetrTransformerDecoderLayer, AttnDetrTransformerDecoder, AttnDetrTransformerDecoderLayer,
                           DynamicConv, Transformer)
 
 __all__ = [
@@ -25,5 +25,6 @@ __all__ = [
     'nlc_to_nchw', 'UpConvBlock', 'Upsample', 'resize',
     'DetrTransformerDecoderLayer', 'DetrTransformerDecoder', 'DynamicConv',
     'Transformer', 'LearnedPositionalEncoding', 'SinePositionalEncoding',
-    'MaskHungarianAssigner', 'get_uncertain_point_coords_with_randomness'
+    'MaskHungarianAssigner', 'get_uncertain_point_coords_with_randomness',
+    'AttnDetrTransformerDecoderLayer', 'AttnDetrTransformerDecoder'
 ]

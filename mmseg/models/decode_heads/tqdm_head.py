@@ -420,7 +420,7 @@ class tqdmHead(BaseDecodeHead):
             sim = (sim + 1.) / 2.
             return cls_pred, sim, attn_mask
 
-    def forward(self, feats, texts, img_metas, return_mask_features=False, get_similarity=False): ### need texts for pixel_decoder !
+    def forward(self, feats, texts, img_metas, return_mask_features=False, get_similarity=False, return_attn=False): ### need texts for pixel_decoder !
         """Forward function.
 
         Args:
@@ -441,7 +441,10 @@ class tqdmHead(BaseDecodeHead):
         """
         batch_size = len(img_metas)
         # 这一步使用text作为key和value，使用visual作为query，构建多尺度的特征。
-        mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
+        if return_attn:
+            mask_features, multi_scale_memorys, attns = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
+        else:
+            mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
         # multi_scale_memorys (from low resolution to high resolution)
         decoder_inputs = []
         decoder_positional_encodings = []
@@ -504,6 +507,8 @@ class tqdmHead(BaseDecodeHead):
 
         if return_mask_features:
             return cls_pred_list, mask_pred_list, mask_features
+        elif return_attn:
+            return cls_pred_list, mask_pred_list, attns
         else:
             return cls_pred_list, mask_pred_list
 
@@ -537,7 +542,7 @@ class tqdmHead(BaseDecodeHead):
 
         return losses
 
-    def forward_test(self, inputs, texts, img_metas, test_cfg):
+    def forward_test(self, inputs, texts, img_metas, test_cfg, return_attn=False):
         """Test segment without test-time aumengtation.
 
         Only the output of last decoder layers was used.
@@ -551,7 +556,10 @@ class tqdmHead(BaseDecodeHead):
         Returns:
             seg_mask (Tensor): Predicted semantic segmentation logits.
         """
-        all_cls_scores, all_mask_preds = self(inputs, texts, img_metas)
+        if return_attn:
+            all_cls_scores, all_mask_preds, attns = self(inputs, texts, img_metas, return_attn=return_attn)
+        else:
+            all_cls_scores, all_mask_preds = self(inputs, texts, img_metas)
         cls_score, mask_pred = all_cls_scores[-1], all_mask_preds[-1]
         ori_h, ori_w, _ = img_metas[0]['ori_shape']
 
@@ -559,7 +567,10 @@ class tqdmHead(BaseDecodeHead):
         cls_score = F.softmax(cls_score, dim=-1)[..., :-1]
         mask_pred = mask_pred.sigmoid()
         seg_mask = torch.einsum('bqc,bqhw->bchw', cls_score, mask_pred)
-        return seg_mask
+        if return_attn:
+            return seg_mask, attns
+        else:
+            return seg_mask
 
     def forward_inference(self, inputs, texts, img_metas, test_cfg):
         all_cls_scores, all_mask_preds, mask_features =\

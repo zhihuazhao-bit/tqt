@@ -21,11 +21,11 @@ def parse_args():
         description='mmseg test (and eval) a model')
     parser.add_argument(
         '--config', 
-        default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512.py',
+        default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sun-traversable-attn.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
-        default='/root/tqdm/work_dirs_o2o_sun_base/tqdm_eva_vit-b_1e-5_5k-o2o-512/best_mIoU_iter_5000.pth',
+        default='/root/tqdm/work_dirs/tqdm_eva_vit-b_1e-5_5k-o2o-512-sun-traversable/best_mIoU_iter_5000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')

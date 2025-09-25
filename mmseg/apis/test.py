@@ -62,8 +62,8 @@ def single_gpu_test(model,
         mmcv.mkdir_or_exist('./efficient_test')
     for i, data in enumerate(data_loader):
         with torch.no_grad():
-            result = model(return_loss=False, **data)
-        if show or out_dir:
+            result = model(return_loss=False, return_attn=True, **data)
+        if show and out_dir:
             img_tensor = data['img'][0]
             img_metas = data['img_metas'][0].data[0]
             imgs = tensor2imgs(img_tensor, **img_metas[0]['img_norm_cfg'])

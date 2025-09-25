@@ -30,33 +30,37 @@ test_pipeline = [
             dict(type='ImageToTensor', keys=['img']),
             dict(type='Collect', keys=['img'])])]
 
-weather = ['sun']
+scene_type = 'weather'
+scene_scope = ['sunny']
 class_names=('notraversable', 'traversable')
 
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
-    img_dir='training/',
-    ann_dir='training/',
-    weather=weather,
+    img_dir='training',
+    ann_dir='training',
+    scene_type=scene_type,
+    scene_scope=scene_scope,
     class_names=class_names,
     pipeline=train_pipeline)
     
 tgt_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
-    img_dir='validation/',
-    ann_dir='validation/',
-    weather=weather,
+    img_dir='validation',
+    ann_dir='validation',
+    scene_type=scene_type,
+    scene_scope=scene_scope,
     class_names=class_names,
     pipeline=test_pipeline)
 
 test_dataset_dict = dict(
     type='ORFDDataset',
-    data_root='dataset/ORFD',
-    img_dir='testing/',
-    ann_dir='testing/',
-    weather=['snow', 'rain', 'fog', 'sun'],
+    data_root='dataset/road3d',
+    img_dir='testing',
+    ann_dir='testing',
+    scene_type='weather',
+    scene_scope=['sunny', 'snowy', 'foggy', 'rainy'],
     class_names=class_names,
     pipeline=test_pipeline)
 

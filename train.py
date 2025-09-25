@@ -33,7 +33,8 @@ def parse_args():
         '--config', 
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
-        default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
+        # default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
+        default=r'/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
         help='train config file path')
     parser.add_argument(
         '--work-dir', 
@@ -104,7 +105,6 @@ def main():
         tokens[i] = len(token)
     cfg.model.context_length = int(tokens.max())
     cfg.model.eva_clip.context_length = int(tokens.max())+8
-
     if args.options is not None:
         cfg.merge_from_dict(args.options)
 
@@ -146,7 +146,7 @@ def main():
     cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
     run = swanlab.init(
         # 设置项目
-        project='tqdm-off',
+        project='tqdm-off2',
         experiment_name=osp.basename(args.config),
         config=cfg._cfg_dict,
     )

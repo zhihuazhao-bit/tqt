@@ -148,22 +148,26 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return losses
 
-    def encode_decode(self, img, img_metas):
+    def encode_decode(self, img, img_metas, return_attn=False):
         x = self.extract_feat(img)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
         out = self.decode_head.forward_test(
-            x, text_emb, img_metas, self.test_cfg)
+            x, text_emb, img_metas, self.test_cfg, return_attn=return_attn)
+        if return_attn:
+            out, attn = out
         out = resize(
             input=out,
             size=img.shape[-2:],
             mode='bilinear',
             align_corners=False)
-            
-        return out
+        if return_attn:
+            return out, attn
+        else:
+            return out
 
-    def slide_inference(self, img, img_meta, rescale):
+    def slide_inference(self, img, img_meta, rescale, return_attn=False):
         """Inference by sliding-window with overlap.
 
         If h_crop > h_img or w_crop > w_img, the small patch will be used to
@@ -177,6 +181,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         h_grids = max(h_img - h_crop + h_stride - 1, 0) // h_stride + 1
         w_grids = max(w_img - w_crop + w_stride - 1, 0) // w_stride + 1
         preds = img.new_zeros((batch_size, num_classes, h_img, w_img))
+        attns = [[img.new_zeros((batch_size, num_classes, h_img, w_img)) for i in range(3)] for j in range(6)]
         count_mat = img.new_zeros((batch_size, 1, h_img, w_img))
         for h_idx in range(h_grids):
             for w_idx in range(w_grids):
@@ -187,10 +192,25 @@ class tqdm_EVA_CLIP(BaseSegmentor):
                 y1 = max(y2 - h_crop, 0)
                 x1 = max(x2 - w_crop, 0)
                 crop_img = img[:, :, y1:y2, x1:x2]                
-                crop_seg_logit = self.encode_decode(crop_img, img_meta)
+                crop_seg_logit = self.encode_decode(crop_img, img_meta, return_attn)
+                if return_attn:
+                    crop_seg_logit, attn = crop_seg_logit
+                    spatial_shapes = attn['spatial_shapes']
+                    num_query_per_level = [e[0] * e[1] for e in spatial_shapes]
+                    attn_weights = attn['attn_weights']
+                    for i, a_layer in enumerate(attn_weights):
+                        outs = torch.split(a_layer[0].permute(0,2,1), num_query_per_level, dim=-1)
+                        for j, a in enumerate(outs):
+                            h = int(a.shape[-1]**0.5)
+                            a = a.resize(1,2,h,h)
+                            a = F.interpolate(a, size=crop_img.shape[2:], mode='bilinear', align_corners=False)
+                            attns[i][j] += F.pad(a,
+                                    (int(x1), int(preds.shape[3] - x2), int(y1),
+                                        int(preds.shape[2] - y2)))
                 preds += F.pad(crop_seg_logit,
                                (int(x1), int(preds.shape[3] - x2), int(y1),
                                 int(preds.shape[2] - y2)))
+                
 
                 count_mat[:, :, y1:y2, x1:x2] += 1
         assert (count_mat == 0).sum() == 0
@@ -199,12 +219,21 @@ class tqdm_EVA_CLIP(BaseSegmentor):
             count_mat = torch.from_numpy(
                 count_mat.cpu().detach().numpy()).to(device=img.device)
         preds = preds / count_mat
+        
         if rescale:
             preds = resize(
                 preds,
                 size=img_meta[0]['ori_shape'][:2],
                 mode='bilinear',
                 align_corners=False)
+        if return_attn:
+            attn_tmp = [torch.stack(inner_list, dim=0) for inner_list in attns]
+            attns = torch.stack(attn_tmp, dim=0)
+            attns = attns / count_mat.unsqueeze(0).unsqueeze(0)
+            filename = img_meta[0]['filename'].split('/')[3] + '_' + img_meta[0]['filename'].split('/')[-1].split('.')[0]
+            os.makedirs('./work_dirs/attns', exist_ok=True)
+            torch.save(attns, os.path.join('./work_dirs/attns', f'{filename}_attns.pt'))
+
         return preds
 
     def whole_inference(self, img, img_meta, rescale):
@@ -228,7 +257,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return seg_logit
 
-    def inference(self, img, img_meta, rescale):
+    def inference(self, img, img_meta, rescale, return_attn=False):
         """Inference with slide/whole style.
 
         Args:
@@ -248,7 +277,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         ori_shape = img_meta[0]['ori_shape']
         assert all(_['ori_shape'] == ori_shape for _ in img_meta)
         if self.test_cfg.mode == 'slide':
-            seg_logit = self.slide_inference(img, img_meta, rescale)
+            seg_logit = self.slide_inference(img, img_meta, rescale, return_attn=return_attn)
         else:
             seg_logit = self.whole_inference(img, img_meta, rescale)
         output = F.softmax(seg_logit, dim=1)
@@ -263,9 +292,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return output
 
-    def simple_test(self, img, img_meta, rescale=True):
+    def simple_test(self, img, img_meta, rescale=True, return_attn=False):
         """Simple test with single image."""
-        seg_logit = self.inference(img, img_meta, rescale)
+        seg_logit = self.inference(img, img_meta, rescale, return_attn=False)
         seg_pred = seg_logit.argmax(dim=1)
         if self.save_seg_logit is True:
             self.seg_logit = seg_logit.cpu().numpy()

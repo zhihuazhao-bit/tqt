@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from mmengine.config import ConfigDict
 from mmengine.model import BaseModule, ModuleList, Sequential
 from mmengine.registry import MODELS
+# from mmcv.cnn.bricks.registry import ATTENTION
 from mmengine.utils import deprecated_api_warning, to_2tuple
 
 from mmcv.cnn import (Linear, build_activation_layer, build_conv_layer,

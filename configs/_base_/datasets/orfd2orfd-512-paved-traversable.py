@@ -6,6 +6,7 @@ crop_size = (512, 512)
 
 train_pipeline = [
     dict(type='LoadImageFromFile'),
+    dict(type='LoadSneFromFile'),
     dict(type='LoadAnnotations', reduce_zero_label=False),
     dict(type='Resize', ratio_range=(0.5, 2.0)),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
@@ -19,6 +20,7 @@ train_pipeline = [
 
 test_pipeline = [
     dict(type='LoadImageFromFile'),
+    dict(type='LoadSneFromFile'),
     dict(
         type='MultiScaleFlipAug',
         img_scale=(2048, 1024),
@@ -30,15 +32,17 @@ test_pipeline = [
             dict(type='ImageToTensor', keys=['img']),
             dict(type='Collect', keys=['img'])])]
 
-weather = ['sun']
-class_names=('Vehicle-accessible areas', 'High-risk terrain blocks')
+scene_type = 'road'
+scene_scope = ['paved']
+class_names=('notraversable', 'traversable')
 
 src_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
     img_dir='training',
     ann_dir='training',
-    weather=weather,
+    scene_type=scene_type,
+    scene_scope=scene_scope,
     class_names=class_names,
     pipeline=train_pipeline)
     
@@ -47,7 +51,8 @@ tgt_dataset_dict = dict(
     data_root='dataset/ORFD',
     img_dir='validation',
     ann_dir='validation',
-    weather=weather,
+    scene_type=scene_type,
+    scene_scope=scene_scope,
     class_names=class_names,
     pipeline=test_pipeline)
 
@@ -56,7 +61,8 @@ test_dataset_dict = dict(
     data_root='dataset/ORFD',
     img_dir='testing',
     ann_dir='testing',
-    weather=['snow', 'rain', 'fog', 'sun'],
+    scene_type='weather',
+    scene_scope=['sunny', 'snowy', 'foggy', 'rainy'],
     class_names=class_names,
     pipeline=test_pipeline)
 

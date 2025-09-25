@@ -15,6 +15,7 @@ from mmseg.utils import get_root_logger
 from mmseg.core import eval_metrics, intersect_and_union, pre_eval_to_metrics, eval_metrics_per
 from prettytable import PrettyTable
 from collections import OrderedDict
+import json
 
 @DATASETS.register_module()
 class ORFDDataset(CustomDataset):
@@ -28,83 +29,93 @@ class ORFDDataset(CustomDataset):
             self.CLASSES = kwargs.get('class_names')
         if 'split' in kwargs:
             kwargs.pop('split')
-        self.all_scene_map = {
-            'val':{
-                'snow':[
-                    'x2021_0223_1856',
-                ],
-                'sun':[
-                    # from test datset
-                    'y0602_1330',
-                ],
-                'rain':[
-                    'y0609_1947',
-                    'x2021_0222_1745'
-                    ],
-                'fog':[
+        # self.all_scene_map = {
+        #     'val':{
+        #         'snow':[
+        #             'x2021_0223_1856',
+        #         ],
+        #         'sun':[
+        #             # from test datset
+        #             'y0602_1330',
+        #         ],
+        #         'rain':[
+        #             'y0609_1947',
+        #             'x2021_0222_1745'
+        #             ],
+        #         'fog':[
 
-                ]
-            },
-            'test':{
-                'snow':[
-                    'x2021_0223_1756',
-                ],
-                'sun':[
-                    'y0613_1220',
-                    'y0613_1242',
-                ],
-                'rain':[
-                    'y0609_1947',
-                    'y0609_1923',
-                    'y2021_0228_1802'
-                    ],
-                'fog':[
+        #         ]
+        #     },
+        #     'test':{
+        #         'snow':[
+        #             'x2021_0223_1756',
+        #         ],
+        #         'sun':[
+        #             'y0613_1220',
+        #             'y0613_1242',
+        #         ],
+        #         'rain':[
+        #             'y0609_1947',
+        #             'y0609_1923',
+        #             'y2021_0228_1802'
+        #             ],
+        #         'fog':[
                     
-                ]
-            },
-            'train':{
-                'snow':[
-                    # 'x2021_0223_1856',
-                    'x2021_0222_1810',
-                    'x2021_0223_1310',
-                    'x2021_0223_1316',
-                    'y2021_0228_1807'
-                ],
-                'sun':[
-                    'c2021_0228_1819',
-                    'x2021_0222_1720',
-                    'y0602_1228',
-                    'y0602_1235',
-                    'y0609_1959_2',
-                    'y0613_1238',
-                    'y0613_1248',
-                    'y0613_1252',
-                    'y0613_1304',
-                    'y0613_1509',
-                ],
-                'rain':[
-                    'x0613_1627',
-                    'y0609_1639',
-                    'y0609_1750',
-                    'y0609_1954',
-                    'y0613_1632',
-                    'y0616_1750',
-                    'y0616_1950'
-                    ],
-                'fog':[
+        #         ]
+        #     },
+        #     'train':{
+        #         'snow':[
+        #             # 'x2021_0223_1856',
+        #             'x2021_0222_1810',
+        #             'x2021_0223_1310',
+        #             'x2021_0223_1316',
+        #             'y2021_0228_1807'
+        #         ],
+        #         'sun':[
+        #             'c2021_0228_1819',
+        #             'x2021_0222_1720',
+        #             'y0602_1228',
+        #             'y0602_1235',
+        #             'y0609_1959_2',
+        #             'y0613_1238',
+        #             'y0613_1248',
+        #             'y0613_1252',
+        #             'y0613_1304',
+        #             'y0613_1509',
+        #         ],
+        #         'rain':[
+        #             'x0613_1627',
+        #             'y0609_1639',
+        #             'y0609_1750',
+        #             'y0609_1954',
+        #             'y0613_1632',
+        #             'y0616_1750',
+        #             'y0616_1950'
+        #             ],
+        #         'fog':[
                     
-                ]
-            }
-        }
+        #         ]
+        #     }
+        # }
         
-        # 构建 scene 到 weather 的反向字典
-        self.scene_to_weather = {scene: weather for mode in ['train', 'val', 'test'] for weather, scenes in self.all_scene_map[mode].items() for scene in scenes}
+        self.scene_attr, self.map2scene = self.load_dicts()
+        self.scene_type = kwargs.get('scene_type', None)
+        assert self.scene_type in self.map2scene.keys(), f"scene_type should be in {self.map2scene.keys()}"
+        if self.scene_type == 'road':
+            self.all_scene_map = {
+                'paved':[],
+                'unpaved':[]
+            }
+            for key, value in self.map2scene['road'].items():
+                t = key.split('_')[0]
+                self.all_scene_map[t].extend(value)
+        else:
+            self.all_scene_map = self.map2scene[self.scene_type]
+        self.scene_scope = kwargs.get('scene_scope', None)
         self.all_scene = []
-        self.weather = kwargs['weather']
-        for weather in self.weather:
-            self.all_scene += self.all_scene_map['train'][weather]
-            self.all_scene += self.all_scene_map['val'][weather]
-            self.all_scene += self.all_scene_map['test'][weather]
+        for s in self.scene_scope:
+            assert s in self.all_scene_map.keys(), f"scene_scope should be in {self.all_scene_map.keys()}"
+            self.all_scene.extend(self.all_scene_map[s])
         print_log(f"Classes: {self.CLASSES}")
         
         super(ORFDDataset, self).__init__(
@@ -112,6 +123,17 @@ class ORFDDataset(CustomDataset):
             seg_map_suffix='_labelTrainIds.png',
             split=None,
             **kwargs)
+
+
+    # 读取JSON文件
+    def load_dicts(self):
+        with open("/root/tqdm/dataset/ORFD/english_scene_dict.json", 'r', encoding='utf-8') as f:
+            english_dict = json.load(f)
+        
+        with open("/root/tqdm/dataset/ORFD/map2scene.json", 'r', encoding='utf-8') as f:
+            map_dict = json.load(f)
+        
+        return english_dict, map_dict
 
     def get_gt_seg_maps(self, efficient_test=None):
         """Get ground truth segmentation maps for evaluation."""
@@ -144,7 +166,6 @@ class ORFDDataset(CustomDataset):
         Returns:
             list[dict]: All image info of dataset.
         """
-
         img_infos = []
         if split is not None:
             with open(split) as f:
@@ -157,10 +178,10 @@ class ORFDDataset(CustomDataset):
                     img_infos.append(img_info)
         else:
             all_scene = []
-            dataset_mode = os.path.split(img_dir)[-1]
-            for scene in self.all_scene:
+            self.dataset_mode = os.path.split(img_dir)[-1]
+            for scene in os.listdir(img_dir):
                 sub_img_dir = os.path.join(img_dir, scene, 'image_data')
-                if os.path.exists(sub_img_dir):
+                if scene[1:].replace("_","-") in self.all_scene:
                     all_scene.append(scene)
                     for img in mmcv.scandir(sub_img_dir, img_suffix, recursive=True):
                         img_info = dict(filename=os.path.join(scene, 'image_data', img))
@@ -168,9 +189,10 @@ class ORFDDataset(CustomDataset):
                             seg_map = img.replace(img_suffix, seg_map_suffix)
                             img_info['ann'] = dict(seg_map=os.path.join(scene, 'gt_image', seg_map))
                             img_infos.append(img_info)
+                            # break
             img_infos = sorted(img_infos, key=lambda x: x['filename'])
         # img_infos = img_infos[0:50]
-        print_log(f'Loaded {dataset_mode} dataset {len(img_infos)} images from {all_scene} in {self.weather}', logger=get_root_logger())
+        print_log(f'Loaded {self.dataset_mode} dataset {len(img_infos)} images from {all_scene} in {self.scene_scope}', logger=get_root_logger())
         return img_infos
     
     def pretty_print_conf_mat(self, conf_mat: np.ndarray, class_names=None, float_fmt="{:.0f}"):
@@ -266,12 +288,38 @@ class ORFDDataset(CustomDataset):
 
         file_stats_pd = pd.DataFrame(file_stats).T
         os.makedirs('./csv_result', exist_ok=True)
-        # 根据 scene 列生成 weather 列
-        file_stats_pd['weather'] = file_stats_pd['scene'].apply(lambda x: self.scene_to_weather.get(x, 'unknown'))
+         # 修正后的正确代码:
+        def get_attribute(scene_name, attr_key):
+            """
+            根据场景名称，从 self.scene_attr 中获取指定的属性值。
+            
+            Args:
+                scene_name (str): 场景名称 (e.g., 'y0602_1330').
+                attr_key (str): 要获取的属性键 (e.g., 'weather', 'road', 'light').
+
+            Returns:
+                str: 属性值，如果找不到则返回 'unknown'.
+            """
+            # 1. 从场景名中移除首字母前缀 (e.g., 'y0602_1330' -> '0602_1330')
+            scene_key = scene_name[1:].replace('_', '-')
+            # 2. 安全地获取该场景的属性字典
+            scene_attributes = self.scene_attr.get(scene_key, {})
+            # 3. 从属性字典中获取指定键的值
+            if attr_key == 'road':
+                # print(f'scene key: {scene_key}, scene_attributes: {scene_attributes}, road type: {scene_attributes.get(attr_key, "unknown")}')
+                road_type = scene_attributes.get(attr_key, 'unknown')
+                return road_type.split('_')[0]  # 只返回 'paved' 或 'unpaved'
+            else: 
+                return scene_attributes.get(attr_key, 'unknown')
+
+        # 为 weather, road, light 分别创建新列
+        for key in ['weather', 'road', 'light']:
+            file_stats_pd[key] = file_stats_pd['scene'].apply(lambda x: get_attribute(x, key))
+
         if save_dir is not None:
-            file_stats_pd.to_csv(osp.join(save_dir, f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+            file_stats_pd.to_csv(osp.join(save_dir, f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
         else:
-            file_stats_pd.to_csv(osp.join('./csv_result', f'eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+            file_stats_pd.to_csv(osp.join('./csv_result', f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
         
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
@@ -291,16 +339,17 @@ class ORFDDataset(CustomDataset):
             print_log(f'Confusion Matrix for scene {scene}:')
             self.pretty_print_conf_mat(conf_mat, class_names=class_names)
 
-        for weather, group in file_stats_pd.groupby('weather'): 
-            conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
-            for i in range(class_num):
-                class_intersect = group[f'class{i}_intersect'].sum()
-                class_area_label = group[f'class{i}_label'].sum()
-                class_pred_label = group[f'class{i}_pred_label'].sum()
-                conf_mat[i, i] = class_intersect  # TP
-                conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
-            print_log(f'Confusion Matrix for weather {weather}:')
-            self.pretty_print_conf_mat(conf_mat, class_names=class_names)
+        for key in ['weather', 'road', 'light']:
+            for value, group in file_stats_pd.groupby(key):
+                conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
+                for i in range(class_num):
+                    class_intersect = group[f'class{i}_intersect'].sum()
+                    class_area_label = group[f'class{i}_label'].sum()
+                    class_pred_label = group[f'class{i}_pred_label'].sum()
+                    conf_mat[i, i] = class_intersect  # TP
+                    conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
+                print_log(f'Confusion Matrix for {key} {value}:')
+                self.pretty_print_conf_mat(conf_mat, class_names=class_names)
 
         # summary table
         ret_metrics_summary = OrderedDict({
@@ -414,6 +463,7 @@ class ORFDDataset(CustomDataset):
         """
 
         img_info = self.img_infos[idx]
-        results = dict(img_info=img_info)
+        sne_info = img_info['filename'].replace("image_data", "surface_normal_d2net_v3")
+        results = dict(img_info=img_info, sne=sne_info)
         self.pre_pipeline(results)
         return self.pipeline(results)
