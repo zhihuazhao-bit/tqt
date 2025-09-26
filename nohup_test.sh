@@ -1,0 +1,1 @@
+python test.py --config /root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py --checkpoint /root/tqdm/work_dirs/weights/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion/best_mIoU_iter_5000.pth --launcher none  >work_dirs/test_logs/test_${size}_${i}_terrian.log 2>&1 &

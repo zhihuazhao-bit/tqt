@@ -1,23 +1,24 @@
 _base_ = [
     '../_base_/default_runtime.py',
     '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-512-sun-terrian-tqt.py']
+    '../_base_/datasets/orfd2orfd-512-sufficient-traversable.py']
 
 data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8)
-return_attn = True
+
+return_attn = False
+# return_attn = True  
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
 text_feature_dim = 512
 visual_feature_dim = 768
 model = dict(
-    type='tqt_EVA_CLIP',
+    type='tqdm_EVA_CLIP',
     token_embed_dim=text_feature_dim,
     text_dim=text_feature_dim,
     context_length=24,
-    prefix_text = 'A terrain region of ',
     eva_clip=dict(
         model_name='EVA02-CLIP-B-16',
         pretrained='weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt',
@@ -36,7 +37,7 @@ model = dict(
         outdim=text_feature_dim,
         style='pytorch'),
     decode_head=dict(
-        type='tqtHead',
+        type='tqdmHead',
         in_channels=[visual_feature_dim, visual_feature_dim, visual_feature_dim, visual_feature_dim],
         feat_channels=256,
         out_channels=256,
@@ -51,13 +52,13 @@ model = dict(
             num_outs=3,
             norm_cfg=dict(type='GN', num_groups=32),
             act_cfg=dict(type='ReLU'),
-            return_attn_weights=return_attn, # 1. 新增参数
+            # return_attn_weights=return_attn, # 1. 新增参数
             encoder=dict(
-                type='AttnDetrTransformerDecoder' if return_attn else 'DetrTransformerEncoder',
+                type='AttnDetrTransformerDecoder' if return_attn else 'DetrTransformerDecoder',
                 return_intermediate=True,
                 num_layers=6,
                 transformerlayers=dict(
-                    type='AttnDetrTransformerDecoderLayer' if return_attn else 'DetrTransformerEncoderLayer',
+                    type='AttnDetrTransformerDecoderLayer' if return_attn else 'DetrTransformerDecoderLayer',
                     attn_cfgs=[
                         dict( # for self attention
                             type='MultiScaleDeformableAttention',

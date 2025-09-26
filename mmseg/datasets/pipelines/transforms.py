@@ -211,6 +211,16 @@ class Resize(object):
                     results[key], results['scale'], interpolation='nearest')
             results[key] = gt_seg
 
+    def _resize_sne(self, results):
+        """Resize SNE feature map with ``results['scale']``."""
+        if self.keep_ratio:
+            img_sne = mmcv.imrescale(
+                results['sne'], results['scale'], interpolation='nearest')
+        else:
+            img_sne = mmcv.imresize(
+                results['sne'], results['scale'], interpolation='nearest')
+        results['sne'] = img_sne
+
     def __call__(self, results):
         """Call function to resize images, bounding boxes, masks, semantic
         segmentation map.
@@ -227,6 +237,8 @@ class Resize(object):
             self._random_scale(results)
         self._resize_img(results)
         self._resize_seg(results)
+        if 'sne' in results:
+            self._resize_sne(results)
         return results
 
     def __repr__(self):

@@ -98,7 +98,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         if self.context_decoder is not None:
             # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
             text_diff = self.context_decoder(text_embeddings, visual_context)
+            # text_embeddings = (1-self.gamma) * text_embeddings + self.gamma * text_diff
             text_embeddings = text_embeddings + self.gamma * text_diff
+            # text_embeddings = (1-0.0001) * text_embeddings + 0.0001 * text_diff
         ret_text_emb = text_embeddings
 
         visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
@@ -109,6 +111,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         return x_orig, score_map, ret_text_emb, global_feat
 
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
+        img = kwargs['sne']
         x = self.extract_feat(img)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
@@ -148,7 +151,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return losses
 
-    def encode_decode(self, img, img_metas, return_attn=False):
+    def encode_decode(self, img, img_metas, return_attn=False, **kwargs):
         x = self.extract_feat(img)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
@@ -167,13 +170,14 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         else:
             return out
 
-    def slide_inference(self, img, img_meta, rescale, return_attn=False):
+    def slide_inference(self, img, img_meta, rescale, return_attn=False, **kwargs):
         """Inference by sliding-window with overlap.
 
         If h_crop > h_img or w_crop > w_img, the small patch will be used to
         decode without padding.
         """
-
+        if 'sne' in kwargs:
+            sne = kwargs['sne']
         h_stride, w_stride = self.test_cfg.stride
         h_crop, w_crop = self.test_cfg.crop_size
         batch_size, _, h_img, w_img = img.size()
@@ -192,7 +196,13 @@ class tqdm_EVA_CLIP(BaseSegmentor):
                 y1 = max(y2 - h_crop, 0)
                 x1 = max(x2 - w_crop, 0)
                 crop_img = img[:, :, y1:y2, x1:x2]                
-                crop_seg_logit = self.encode_decode(crop_img, img_meta, return_attn)
+                if 'sne' in kwargs:
+                    crop_sne = sne[:, :, y1:y2, x1:x2]
+                    kwargs['sne'] = crop_sne
+                    b, _, h, w = crop_sne.shape
+                    if h !=512 or w !=512:
+                        pass
+                crop_seg_logit = self.encode_decode(crop_img, img_meta, return_attn, **kwargs)
                 if return_attn:
                     crop_seg_logit, attn = crop_seg_logit
                     spatial_shapes = attn['spatial_shapes']
@@ -231,8 +241,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
             attns = torch.stack(attn_tmp, dim=0)
             attns = attns / count_mat.unsqueeze(0).unsqueeze(0)
             filename = img_meta[0]['filename'].split('/')[3] + '_' + img_meta[0]['filename'].split('/')[-1].split('.')[0]
-            os.makedirs('./work_dirs/attns', exist_ok=True)
-            torch.save(attns, os.path.join('./work_dirs/attns', f'{filename}_attns.pt'))
+            attn_save_dir = self.test_cfg.get('attn_save_dir', './work_dirs/attns')
+            os.makedirs(attn_save_dir, exist_ok=True)
+            torch.save(attns, os.path.join(attn_save_dir, f'{filename}_attns.pt'))
 
         return preds
 
@@ -257,7 +268,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return seg_logit
 
-    def inference(self, img, img_meta, rescale, return_attn=False):
+    def inference(self, img, img_meta, rescale, return_attn=False, **kwargs):
         """Inference with slide/whole style.
 
         Args:
@@ -277,9 +288,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         ori_shape = img_meta[0]['ori_shape']
         assert all(_['ori_shape'] == ori_shape for _ in img_meta)
         if self.test_cfg.mode == 'slide':
-            seg_logit = self.slide_inference(img, img_meta, rescale, return_attn=return_attn)
+            seg_logit = self.slide_inference(img, img_meta, rescale, return_attn=return_attn, **kwargs)
         else:
-            seg_logit = self.whole_inference(img, img_meta, rescale)
+            seg_logit = self.whole_inference(img, img_meta, rescale, **kwargs)
         output = F.softmax(seg_logit, dim=1)
         flip = img_meta[0]['flip']
         if flip:
@@ -292,9 +303,10 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return output
 
-    def simple_test(self, img, img_meta, rescale=True, return_attn=False):
+    def simple_test(self, img, img_meta, rescale=True, **kwargs):
         """Simple test with single image."""
-        seg_logit = self.inference(img, img_meta, rescale, return_attn=False)
+        return_attn = self.test_cfg.get('return_attn', False)
+        seg_logit = self.inference(img, img_meta, rescale, return_attn=return_attn, **kwargs)
         seg_pred = seg_logit.argmax(dim=1)
         if self.save_seg_logit is True:
             self.seg_logit = seg_logit.cpu().numpy()
@@ -307,7 +319,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         seg_pred = list(seg_pred)
         return seg_pred
     
-    def aug_test(self, imgs, img_metas, rescale=True):
+    def aug_test(self, imgs, img_metas, rescale=True, **kwargs):
         """Test with augmentations.
 
         Only rescale=True is supported.
@@ -315,9 +327,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         # aug_test rescale all imgs back to ori_shape for now
         assert rescale
         # to save memory, we get augmented seg logit inplace
-        seg_logit = self.inference(imgs[0], img_metas[0], rescale)
+        seg_logit = self.inference(imgs[0], img_metas[0], rescale, **kwargs)
         for i in range(1, len(imgs)):
-            cur_seg_logit = self.inference(imgs[i], img_metas[i], rescale)
+            cur_seg_logit = self.inference(imgs[i], img_metas[i], rescale, **kwargs)
             seg_logit += cur_seg_logit
         seg_logit /= len(imgs)
         if self.save_seg_logit is True:

@@ -6,6 +6,7 @@ crop_size = (512, 512)
 
 train_pipeline = [
     dict(type='LoadImageFromFile'),
+    dict(type='LoadSneFromFile'),
     dict(type='LoadAnnotations', reduce_zero_label=False),
     dict(type='Resize', ratio_range=(0.5, 2.0)),
     dict(type='RandomCrop', crop_size=crop_size, cat_max_ratio=0.75),
@@ -15,10 +16,11 @@ train_pipeline = [
     dict(type='Pad', size=crop_size, pad_val=0, seg_pad_val=255),
     dict(type='ToMask'),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_semantic_seg', 'gt_masks', 'gt_labels'])]
+    dict(type='Collect', keys=['img', 'gt_semantic_seg', 'gt_masks', 'gt_labels', 'sne'])]
 
 test_pipeline = [
     dict(type='LoadImageFromFile'),
+    dict(type='LoadSneFromFile'),
     dict(
         type='MultiScaleFlipAug',
         img_scale=(2048, 1024),
@@ -27,8 +29,8 @@ test_pipeline = [
             dict(type='Resize', keep_ratio=True),
             dict(type='RandomFlip'),
             dict(type='Normalize', **img_norm_cfg),
-            dict(type='ImageToTensor', keys=['img']),
-            dict(type='Collect', keys=['img'])])]
+            dict(type='ImageToTensor', keys=['img', 'sne']),
+            dict(type='Collect', keys=['img', 'sne'])])]
 
 scene_type = 'weather'
 scene_scope = ['sunny']

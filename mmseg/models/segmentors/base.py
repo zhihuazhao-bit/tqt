@@ -95,6 +95,8 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
             # pad_shapes = [_[0]['pad_shape'] for _ in img_meta._data]
             assert all(shape == pad_shapes[0] for shape in pad_shapes)
         if num_augs == 1:
+            if 'sne' in kwargs:
+                kwargs['sne'] = kwargs['sne'][0]
             return self.simple_test(imgs[0], img_metas[0], **kwargs)
             # return self.simple_test(imgs[0], img_metas[0]._data[0], **kwargs)
         else:
@@ -151,6 +153,8 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
             num_samples=len(data_batch['img_metas']))
         import swanlab
         swanlab.log(log_vars)
+        if hasattr(self, 'gamma'):
+            swanlab.log({'gamma': torch.mean(self.gamma).item()})
 
         return outputs
 

@@ -1,12 +1,14 @@
 _base_ = [
     '../_base_/default_runtime.py',
     '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-512-sun-terrian-tqt.py']
+    '../_base_/datasets/orfd2orfd-512-sun-traversable-tqt.py']
 
 data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8)
-return_attn = True
+
+return_attn = False
+# return_attn = True  
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2

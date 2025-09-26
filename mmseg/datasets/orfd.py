@@ -316,7 +316,7 @@ class ORFDDataset(CustomDataset):
         for key in ['weather', 'road', 'light']:
             file_stats_pd[key] = file_stats_pd['scene'].apply(lambda x: get_attribute(x, key))
 
-        if save_dir is not None:
+        if save_dir is not None and os.path.exists(save_dir):
             file_stats_pd.to_csv(osp.join(save_dir, f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
         else:
             file_stats_pd.to_csv(osp.join('./csv_result', f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
