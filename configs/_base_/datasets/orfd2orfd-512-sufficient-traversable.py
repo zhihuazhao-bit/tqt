@@ -61,8 +61,12 @@ test_dataset_dict = dict(
     data_root='dataset/ORFD',
     img_dir='testing/',
     ann_dir='testing/',
-    scene_type='weather',
-    scene_scope=['sunny', 'snowy', 'foggy', 'rainy'],
+    scene_type='light',
+    scene_scope=[
+        'evening', 
+        # 'sufficient', 
+        # 'night'
+        ],
     class_names=class_names,
     pipeline=test_pipeline)
 

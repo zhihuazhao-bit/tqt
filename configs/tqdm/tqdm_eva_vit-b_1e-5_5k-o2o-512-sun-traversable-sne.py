@@ -7,8 +7,8 @@ data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8)
 
-return_attn = False
-# return_attn = True  
+# return_attn = False
+return_attn = True  
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
@@ -186,7 +186,7 @@ model = dict(
         crop_size=(512, 512), 
         stride=(341, 341),
         return_attn=return_attn,
-        attn_save_dir='./work_dirs/attns/tqdm_b_sufficient_terrian'
+        attn_save_dir='./work_dirs/attns/tqdm_b_sufficient_terrian-sne'
         )
 )
 

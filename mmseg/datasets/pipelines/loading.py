@@ -144,7 +144,7 @@ class LoadSneFromFile(object):
         if self.to_float32:
             img = img.astype(np.float32)
 
-        results['sne'] = img / 65535
+        results['sne'] = (img / 65535)
         return results
 
     def __repr__(self):

@@ -7,6 +7,8 @@ data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8)
 
+# return_attn = False
+return_attn = True  
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
@@ -45,17 +47,18 @@ model = dict(
         num_queries=class_num,
         num_transformer_feat_level=3,
         pixel_decoder=dict(
-            type='tqdmMSDeformAttnPixelDecoder',
+            type='AttntqdmMSDeformAttnPixelDecoder',
             num_text_embeds=class_num,
             num_outs=3,
             norm_cfg=dict(type='GN', num_groups=32),
             act_cfg=dict(type='ReLU'),
+            return_attn_weights=return_attn, # 1. 新增参数
             encoder=dict(
-                type='DetrTransformerDecoder',
+                type='AttnDetrTransformerDecoder' if return_attn else 'DetrTransformerDecoder',
                 return_intermediate=True,
                 num_layers=6,
                 transformerlayers=dict(
-                    type='DetrTransformerDecoderLayer',
+                    type='AttnDetrTransformerDecoderLayer' if return_attn else 'DetrTransformerDecoderLayer',
                     attn_cfgs=[
                         dict( # for self attention
                             type='MultiScaleDeformableAttention',
@@ -70,7 +73,7 @@ model = dict(
                             init_cfg=None
                         ),
                         dict( # for cross attention
-                            type='MultiheadAttention',
+                            type='AttnMultiheadAttention' if return_attn else 'MultiheadAttention',
                             embed_dims=256,
                             num_heads=8,
                             attn_drop=0.0,
@@ -178,7 +181,13 @@ model = dict(
         loss_decode=dict(
             type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.)),
     train_cfg=dict(),
-    test_cfg=dict(mode='slide', crop_size=(512, 512), stride=(341, 341))
+    test_cfg=dict(
+        mode='slide', 
+        crop_size=(512, 512), 
+        stride=(341, 341),
+        return_attn=return_attn,
+        attn_save_dir='./work_dirs/attns/tqdm_b_sufficient_traversable'
+        )
 )
 
 optimizer = dict(type='AdamW', lr=1e-5, weight_decay=1e-4,

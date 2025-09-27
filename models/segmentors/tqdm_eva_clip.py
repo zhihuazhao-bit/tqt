@@ -111,7 +111,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         return x_orig, score_map, ret_text_emb, global_feat
 
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
-        img = kwargs['sne']
+        # img = kwargs['sne']
         x = self.extract_feat(img)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
@@ -152,6 +152,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         return losses
 
     def encode_decode(self, img, img_metas, return_attn=False, **kwargs):
+        # img = kwargs['sne']
         x = self.extract_feat(img)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
