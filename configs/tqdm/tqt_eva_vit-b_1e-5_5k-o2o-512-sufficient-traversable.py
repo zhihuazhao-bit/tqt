@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/default_runtime.py',
     '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-512-sun-traversable-tqt.py']
+    '../_base_/datasets/orfd2orfd-512-sufficient-traversable-tqt.py']
 
 data = dict(
     samples_per_gpu=8,
@@ -19,7 +19,6 @@ model = dict(
     token_embed_dim=text_feature_dim,
     text_dim=text_feature_dim,
     context_length=24,
-    prefix_text = 'A terrain region of ',
     eva_clip=dict(
         model_name='EVA02-CLIP-B-16',
         pretrained='weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt',
@@ -48,18 +47,18 @@ model = dict(
         num_queries=class_num,
         num_transformer_feat_level=3,
         pixel_decoder=dict(
-            type='AttntqdmMSDeformAttnPixelDecoder' if return_attn else 'tqdmMSDeformAttnPixelDecoder',
+            type='AttntqdmMSDeformAttnPixelDecoder',
             num_text_embeds=class_num,
             num_outs=3,
             norm_cfg=dict(type='GN', num_groups=32),
             act_cfg=dict(type='ReLU'),
             return_attn_weights=return_attn, # 1. 新增参数
             encoder=dict(
-                type='AttnDetrTransformerDecoder' if return_attn else 'DetrTransformerEncoder',
+                type='AttnDetrTransformerDecoder' if return_attn else 'DetrTransformerDecoder',
                 return_intermediate=True,
                 num_layers=6,
                 transformerlayers=dict(
-                    type='AttnDetrTransformerDecoderLayer' if return_attn else 'DetrTransformerEncoderLayer',
+                    type='AttnDetrTransformerDecoderLayer' if return_attn else 'DetrTransformerDecoderLayer',
                     attn_cfgs=[
                         dict( # for self attention
                             type='MultiScaleDeformableAttention',

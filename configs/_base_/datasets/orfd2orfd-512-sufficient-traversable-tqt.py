@@ -36,9 +36,9 @@ test_pipeline = [
             dict(type='ImageToTensor', keys=['img', 'sne']),
             dict(type='Collect', keys=['img', 'sne'])])]
 
-scene_type = 'weather'
-scene_scope = ['sunny']
-class_names=('High-risk terrain blocks', 'Vehicle-accessible areas')
+scene_type = 'light'
+scene_scope = ['sufficient']
+class_names=('notraversable', 'traversable')
 
 src_dataset_dict = dict(
     type='ORFDDataset',

@@ -6,7 +6,8 @@ _base_ = [
 data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8)
-return_attn = True
+# return_attn = True
+return_attn = False
 class_num = 2
 class_thing_num = 0
 class_stuff_num = 2
@@ -46,7 +47,7 @@ model = dict(
         num_queries=class_num,
         num_transformer_feat_level=3,
         pixel_decoder=dict(
-            type='AttntqdmMSDeformAttnPixelDecoder' if return_attn else 'tqdmMSDeformAttnPixelDecoder',
+            type='AttntqdmMSDeformAttnPixelDecoder',
             num_text_embeds=class_num,
             num_outs=3,
             norm_cfg=dict(type='GN', num_groups=32),
@@ -185,7 +186,7 @@ model = dict(
         crop_size=(512, 512), 
         stride=(341, 341),
         return_attn=return_attn,
-        attn_save_dir='./work_dirs/attns/tqdm_b_sufficient_terrian'
+        attn_save_dir='./work_dirs/attns/tqt_b_sufficient_terrian_prefixRegion'
         )
 )
 

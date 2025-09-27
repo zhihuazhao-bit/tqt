@@ -61,8 +61,10 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.use_sne = use_sne
         if self.use_sne:
             # self.backbone 是在父类中被初始化的，这里可以直接使用
+            self.context_decoder_sne = copy.deepcopy(self.context_decoder)
             self.sne_backbone = copy.deepcopy(self.backbone)
-            self.sne_proj = nn.Linear(text_dim, 2)
+            self.gamma_sne = nn.Parameter(torch.ones(text_dim) * 1e-4)
+            nn.init.trunc_normal_(self.gamma_sne)
 
     def extract_feat(self, img):
         x = self.backbone.extract_feats(img)
@@ -90,24 +92,51 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
 
         return x_orig, score_map, ret_text_emb, global_feat
 
+    def after_extract_feat_sne(self, x, sne):
+        x_orig = list(x[:-1])
+        sne_orig = list(sne[:-1])
+        new_orig = [x_orig[i] + sne_orig[i] for i in range(len(x_orig))]
+        # global_feat是开头的那个cls token， visual_embeddings是后面的patch tokens
+        global_feat, visual_embeddings = x[-1]
+        global_sne_feat, sne_embeddings = sne[-1]
+        b_size = global_feat.shape[0]
+
+        visual_context = torch.cat([global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
+        sne_context = torch.cat([global_sne_feat, sne_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
+        text_embeddings = self.text_encoder(self.texts, context=self.contexts).expand(b_size, -1, -1)
+
+        if self.context_decoder is not None:
+            # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
+            text_diff = self.context_decoder(text_embeddings, visual_context)
+            text_sne_diff = self.context_decoder_sne(text_embeddings, sne_context)
+            text_embeddings = text_embeddings + self.gamma * text_diff + self.gamma_sne * text_sne_diff
+        ret_text_emb = text_embeddings
+
+        visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
+        sne_embeddings = F.normalize(sne_embeddings, dim=1, p=2)
+        text_embeddings = F.normalize(text_embeddings, dim=-1, p=2)
+        # 做一次初步的分割, 余弦相似度
+        score_map = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
+        score_map_sne = torch.einsum('bchw,bkc->bkhw', sne_embeddings, text_embeddings)
+
+        return new_orig, score_map, score_map_sne, ret_text_emb, global_feat
+
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
+        losses = dict()
+
         x = self.extract_feat(img)
         if self.use_sne:
             sne = kwargs['sne']
-            _, sne_feature = self.sne_backbone.extract_feats(sne)[-1]
-            b, c, h, w = sne_feature.shape
-            sne_feature = self.sne_proj(sne_feature.permute(0, 2, 3, 1).contiguous().view(b, h*w, c)).view(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
-            sne_feature = resize(sne_feature, size=(128,128), mode='bilinear', align_corners=False)
-            sne_sigmoid = torch.sigmoid(sne_feature)
-        x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
+            sne_feature = self.sne_backbone.extract_feats(sne)
+            x_orig, score_map, score_map_sne, text_emb, global_feat = self.after_extract_feat_sne(x, sne_feature)
+            # identity是什么？
+            loss_score_map_sne = self.identity_head.forward_train(
+                score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+            losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
+        else:
+            x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
-        losses = dict()
-
-        if self.use_sne:
-            loss_score_map = self.identity_head.forward_train(
-                sne_sigmoid, img_metas, gt_semantic_seg, self.train_cfg)
-            losses.update(add_prefix(loss_score_map, 'sne_map'))
 
         # language regularization
         if self.textual_reg is True:
@@ -136,12 +165,12 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             losses.update(add_prefix(loss_score_map, 'scr_map'))
 
         # decode head loss
-        if self.use_sne:
-            loss_decode = self.decode_head.forward_train(
-                x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'], sne_feature=sne_sigmoid[:,-1:])
-        else:
-            loss_decode = self.decode_head.forward_train(
-                x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'])
+        # if self.use_sne:
+        #     loss_decode = self.decode_head.forward_train(
+        #         x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'], sne_feature=sne_sigmoid[:,-1:])
+        # else:
+        loss_decode = self.decode_head.forward_train(
+            x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'])
         losses.update(add_prefix(loss_decode, 'decode'))
 
         return losses
@@ -150,19 +179,18 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         x = self.extract_feat(img)
         if self.use_sne:
             sne = kwargs['sne']
-            _, sne_feature = self.sne_backbone.extract_feats(sne)[-1]
-            b, c, h, w = sne_feature.shape
-            sne_feature = self.sne_proj(sne_feature.permute(0, 2, 3, 1).contiguous().view(b, h*w, c)).view(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
-            sne_feature = resize(sne_feature, size=(128,128), mode='bilinear', align_corners=False)
-            sne_sigmoid = torch.sigmoid(sne_feature)
+            sne_feature = self.sne_backbone.extract_feats(sne)
+            x_orig, score_map, score_map_sne, text_emb, global_feat = self.after_extract_feat_sne(x, sne_feature)
+        else:
+            x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
-        if self.use_sne:
-            out = self.decode_head.forward_test(
-                x, text_emb, img_metas, self.test_cfg, return_attn=return_attn, sne_feature=sne_sigmoid[:,-1:])
-        else:
-            out = self.decode_head.forward_test(
+        # if self.use_sne:
+        #     out = self.decode_head.forward_test(
+        #         x, text_emb, img_metas, self.test_cfg, return_attn=return_attn, sne_feature=sne_sigmoid[:,-1:])
+        # else:
+        out = self.decode_head.forward_test(
                 x, text_emb, img_metas, self.test_cfg, return_attn=return_attn)
         if return_attn:
             out, attn = out
