@@ -34,7 +34,7 @@ def parse_args():
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
         # default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
-        default=r'/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
+        default=r'/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls-nosne.py',
         help='train config file path')
     parser.add_argument(
         '--work-dir', 
@@ -102,7 +102,7 @@ def main():
     # 示例：对 class_names 中的每个类别名称进行分词
     for i, class_name in enumerate(cfg.class_names):
         token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
-        tokens[i] = len(token)
+        tokens[i] = len(token) + 12
     cfg.model.context_length = int(tokens.max())
     cfg.model.eva_clip.context_length = int(tokens.max())+8
     if args.options is not None:

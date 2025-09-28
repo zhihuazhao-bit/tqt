@@ -155,6 +155,14 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         swanlab.log(log_vars)
         if hasattr(self, 'gamma'):
             swanlab.log({'gamma': torch.mean(self.gamma).item()})
+        if hasattr(self, 'gamma_sne'):
+            swanlab.log({'gamma_sne': torch.mean(self.gamma_sne).item()})
+        if hasattr(self, 'acc_road'):
+            swanlab.log({'acc_road': self.acc_road})
+        if hasattr(self, 'acc_weather'):
+            swanlab.log({'acc_weather': self.acc_weather})
+        if hasattr(self, 'acc_light'):
+            swanlab.log({'acc_light': self.acc_light})
 
         return outputs
 

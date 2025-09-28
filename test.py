@@ -22,12 +22,12 @@ def parse_args():
     parser.add_argument(
         '--config', 
         # default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
-        default=r'/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
+        default=r'/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
         # default='/root/tqdm/work_dirs/weights/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable/best_mIoU_iter_4000.pth',
-        default=r'/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable/best_mIoU_iter_3000.pth',
+        default=r'/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls/iter_1000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
@@ -125,7 +125,7 @@ def main():
     # 示例：对 class_names 中的每个类别名称进行分词
     for i, class_name in enumerate(cfg.class_names):
         token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
-        tokens[i] = len(token)
+        tokens[i] = len(token) + 12
     cfg.model.context_length = int(tokens.max())
     cfg.model.eva_clip.context_length = int(tokens.max())+8
     

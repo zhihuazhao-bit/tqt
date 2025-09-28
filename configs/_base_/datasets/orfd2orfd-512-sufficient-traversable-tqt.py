@@ -60,13 +60,23 @@ tgt_dataset_dict = dict(
     class_names=class_names,
     pipeline=test_pipeline)
 
-test_dataset_dict = dict(
+int_dataset_dict = dict(
     type='ORFDDataset',
     data_root='dataset/ORFD',
     img_dir='testing',
     ann_dir='testing',
-    scene_type='weather',
-    scene_scope=['sunny', 'snowy', 'foggy', 'rainy'],
+    scene_type='light',
+    scene_scope=['evening'],
+    class_names=class_names,
+    pipeline=test_pipeline)
+
+test_dataset_dict = dict(
+    type='ORFDDataset',
+    data_root='dataset/road3d',
+    img_dir='testing',
+    ann_dir='testing',
+    scene_type='light',
+    scene_scope=['evening'],
     class_names=class_names,
     pipeline=test_pipeline)
 
@@ -78,4 +88,5 @@ data = dict(
         source=src_dataset_dict,
         rare_class_sampling=None),
     val=tgt_dataset_dict,
-    test=test_dataset_dict)
+    test=test_dataset_dict,
+    int=int_dataset_dict)

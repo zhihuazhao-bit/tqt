@@ -44,6 +44,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         print(f"prefix_text: '{self.prefix_text}'")
 
         self.num_classes = len(class_names)
+        self.class_names = class_names
         self.context_length = context_length
         self.visual_reg = visual_reg
         self.textual_reg = textual_reg
@@ -62,9 +63,9 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         self.identity_head = builder.build_head(identity_head) if identity_head is not None else None
 
         # coop
-        prompt_num = self.text_encoder.context_length - self.context_length
+        self.prompt_num = self.text_encoder.context_length - self.context_length
         self.texts = torch.cat([tokenize(c, context_length=context_length) for c in class_names]).to('cuda')
-        self.contexts = nn.Parameter(torch.randn(1, prompt_num, token_embed_dim))
+        self.contexts = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
         self.gamma = nn.Parameter(torch.ones(text_dim) * 1e-4)
 
         nn.init.trunc_normal_(self.contexts)

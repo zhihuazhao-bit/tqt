@@ -186,7 +186,7 @@ model = dict(
         crop_size=(512, 512), 
         stride=(341, 341),
         return_attn=return_attn,
-        attn_save_dir='./work_dirs/attns/tqdm_b_sufficient_terrian'
+        attn_save_dir='./work_dirs/attns/tqt_b_sufficient_traversable-proj'
         )
 )
 

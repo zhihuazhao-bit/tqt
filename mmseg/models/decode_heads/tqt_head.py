@@ -39,6 +39,7 @@ class tqtHead(tqdmHead):
                  test_cfg=None,
                  init_cfg=None,
                  text_proj=None,
+                 use_sne=True,
                  **kwargs):
         super(tqtHead, self).__init__(
             in_channels=in_channels,
@@ -61,6 +62,14 @@ class tqtHead(tqdmHead):
             text_proj=text_proj,
             **kwargs
         )
+        self.use_sne = use_sne
+        if self.use_sne:
+            self.sne_pixel_decoder = copy.deepcopy(self.pixel_decoder)
+            self.feature_projs = ModuleList()
+            # from low resolution to high resolution
+            for _ in range(num_transformer_feat_level+1):
+                self.feature_projs.append(
+                    Conv2d(feat_channels*2, feat_channels, kernel_size=1))
 
     def forward(self, feats, texts, img_metas, sne_feature=None, return_mask_features=False, get_similarity=False, return_attn=False): ### need texts for pixel_decoder !
         """Forward function.
@@ -87,8 +96,16 @@ class tqtHead(tqdmHead):
             mask_features, multi_scale_memorys, attns = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
         else:
             mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
-        if sne_feature is not None:
-            mask_features = sne_feature * mask_features
+        if self.use_sne and sne_feature is not None:
+            if return_attn:
+                sne_mask_features, sne_multi_scale_memorys, sne_attns = self.sne_pixel_decoder(sne_feature, texts)
+                attns['sne_attn_weights'] = sne_attns['attn_weights']
+            else:
+                sne_mask_features, sne_multi_scale_memorys = self.sne_pixel_decoder(sne_feature, texts)
+            # multi_scale_memorys = [multi_scale_memorys[i]+sne_multi_scale_memorys[i] for i in range(len(multi_scale_memorys))]
+            # mask_features = mask_features + sne_mask_features
+            multi_scale_memorys = [self.feature_projs[i](torch.cat([multi_scale_memorys[i], sne_multi_scale_memorys[i]], dim=1)) for i in range(len(multi_scale_memorys))]
+            mask_features = self.feature_projs[-1](torch.cat([mask_features, sne_mask_features], dim=1))
         # multi_scale_memorys (from low resolution to high resolution)
         decoder_inputs = []
         decoder_positional_encodings = []
@@ -151,7 +168,7 @@ class tqtHead(tqdmHead):
 
         if return_mask_features:
             return cls_pred_list, mask_pred_list, mask_features
-        elif return_attn:
+        elif return_attn and self.training is False:
             return cls_pred_list, mask_pred_list, attns
         else:
             return cls_pred_list, mask_pred_list
@@ -178,7 +195,7 @@ class tqtHead(tqdmHead):
         """
 
         # forward
-        all_cls_scores, all_mask_preds = self(x, texts, img_metas, sne_feature)
+        all_cls_scores, all_mask_preds = self(x, texts, img_metas, sne_feature=sne_feature)
 
         # loss
         losses = self.loss(all_cls_scores, all_mask_preds, gt_labels, gt_masks,
@@ -201,9 +218,9 @@ class tqtHead(tqdmHead):
             seg_mask (Tensor): Predicted semantic segmentation logits.
         """
         if return_attn:
-            all_cls_scores, all_mask_preds, attns = self(inputs, texts, img_metas, sne_feature, return_attn=return_attn)
+            all_cls_scores, all_mask_preds, attns = self(inputs, texts, img_metas, sne_feature=sne_feature, return_attn=return_attn)
         else:
-            all_cls_scores, all_mask_preds = self(inputs, texts, img_metas, sne_feature)
+            all_cls_scores, all_mask_preds = self(inputs, texts, img_metas, sne_feature=sne_feature)
         cls_score, mask_pred = all_cls_scores[-1], all_mask_preds[-1]
         ori_h, ori_w, _ = img_metas[0]['ori_shape']
 

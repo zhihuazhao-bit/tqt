@@ -21,11 +21,11 @@ def parse_args():
         description='mmseg test (and eval) a model')
     parser.add_argument(
         '--config', 
-        default='/root/tqdm/configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
+        default='/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
-        default='/root/tqdm/work_dirs/norain/tqdm_eva_vit-l_1e-5_5k-o2o-512/iter_5000.pth',
+        default='/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls/iter_1000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
@@ -45,12 +45,12 @@ def parse_args():
         ' for generic datasets, and "cityscapes" for Cityscapes')
     parser.add_argument(
         '--show', 
-        default=False,
+        default=True,
         action='store_true', 
         help='show results')
     parser.add_argument(
         '--show-dir', 
-        default='./work_dirs/test/',
+        default='./work_dirs/test/tqt-eva-b-sufficient-traversable-cls',
         help='directory where painted images will be saved')
     parser.add_argument(
         '--gpu-collect',
@@ -123,7 +123,7 @@ def main():
     # 示例：对 class_names 中的每个类别名称进行分词
     for i, class_name in enumerate(cfg.class_names):
         token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
-        tokens[i] = len(token)
+        tokens[i] = len(token) + 12
     cfg.model.context_length = int(tokens.max())
     cfg.model.eva_clip.context_length = int(tokens.max())+8
     
