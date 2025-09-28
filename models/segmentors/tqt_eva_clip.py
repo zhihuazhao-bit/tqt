@@ -361,7 +361,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 x_orig, sne_orig = x_orig
         else:
             x_orig, score_map, text_emb, global_feat, attr_logits = self.after_extract_feat(x)
-        x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
+        # x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
         if self.use_sne:
