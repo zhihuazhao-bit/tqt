@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/default_runtime.py',
-    '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-512-sufficient-traversable-cls-tqt.py']
+    '../_base_/schedules/schedule_10k.py',
+    '../_base_/datasets/road2road-512-sufficient-traversable-cls-tqt.py']
 
 data = dict(
     samples_per_gpu=8,
@@ -19,6 +19,11 @@ model = dict(
     token_embed_dim=text_feature_dim,
     text_dim=text_feature_dim,
     context_length=24,
+    prefix_text = 'A region that is ',
+    prompt_cls=True,
+    use_sne=True,
+    feature_phase='pixel', # 'pixel' or 'context'
+    feature_mode='proj',    # 'proj' or 'add'
     eva_clip=dict(
         model_name='EVA02-CLIP-B-16',
         pretrained='weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt',

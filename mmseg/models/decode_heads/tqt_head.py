@@ -71,7 +71,7 @@ class tqtHead(tqdmHead):
                 self.feature_projs.append(
                     Conv2d(feat_channels*2, feat_channels, kernel_size=1))
 
-    def forward(self, feats, texts, img_metas, sne_feature=None, return_mask_features=False, get_similarity=False, return_attn=False): ### need texts for pixel_decoder !
+    def forward(self, feats, texts, img_metas, sne_feature=None, return_mask_features=False, get_similarity=False, return_attn=False, feature_mode=None): ### need texts for pixel_decoder !
         """Forward function.
 
         Args:
@@ -102,10 +102,13 @@ class tqtHead(tqdmHead):
                 attns['sne_attn_weights'] = sne_attns['attn_weights']
             else:
                 sne_mask_features, sne_multi_scale_memorys = self.sne_pixel_decoder(sne_feature, texts)
-            # multi_scale_memorys = [multi_scale_memorys[i]+sne_multi_scale_memorys[i] for i in range(len(multi_scale_memorys))]
-            # mask_features = mask_features + sne_mask_features
-            multi_scale_memorys = [self.feature_projs[i](torch.cat([multi_scale_memorys[i], sne_multi_scale_memorys[i]], dim=1)) for i in range(len(multi_scale_memorys))]
-            mask_features = self.feature_projs[-1](torch.cat([mask_features, sne_mask_features], dim=1))
+            assert feature_mode in ['proj', 'add'], "feature_mode must be 'proj' or 'add'"
+            if feature_mode == 'add':
+                multi_scale_memorys = [multi_scale_memorys[i]+sne_multi_scale_memorys[i] for i in range(len(multi_scale_memorys))]
+                mask_features = mask_features + sne_mask_features
+            else: # feature_mode == 'proj':
+                multi_scale_memorys = [self.feature_projs[i](torch.cat([multi_scale_memorys[i], sne_multi_scale_memorys[i]], dim=1)) for i in range(len(multi_scale_memorys))]
+                mask_features = self.feature_projs[-1](torch.cat([mask_features, sne_mask_features], dim=1))
         # multi_scale_memorys (from low resolution to high resolution)
         decoder_inputs = []
         decoder_positional_encodings = []
@@ -174,7 +177,7 @@ class tqtHead(tqdmHead):
             return cls_pred_list, mask_pred_list
 
     def forward_train(self, x, texts, img_metas, gt_semantic_seg, train_cfg,
-                      gt_labels, gt_masks, sne_feature=None):
+                      gt_labels, gt_masks, sne_feature=None, **kwargs):
         """Forward function for training mode.
 
         Args:
@@ -195,7 +198,7 @@ class tqtHead(tqdmHead):
         """
 
         # forward
-        all_cls_scores, all_mask_preds = self(x, texts, img_metas, sne_feature=sne_feature)
+        all_cls_scores, all_mask_preds = self(x, texts, img_metas, sne_feature=sne_feature, **kwargs)
 
         # loss
         losses = self.loss(all_cls_scores, all_mask_preds, gt_labels, gt_masks,
@@ -203,7 +206,7 @@ class tqtHead(tqdmHead):
 
         return losses
 
-    def forward_test(self, inputs, texts, img_metas, test_cfg, return_attn=False, sne_feature=None):
+    def forward_test(self, inputs, texts, img_metas, test_cfg, return_attn=False, sne_feature=None, **kwargs):
         """Test segment without test-time aumengtation.
 
         Only the output of last decoder layers was used.
@@ -218,9 +221,9 @@ class tqtHead(tqdmHead):
             seg_mask (Tensor): Predicted semantic segmentation logits.
         """
         if return_attn:
-            all_cls_scores, all_mask_preds, attns = self(inputs, texts, img_metas, sne_feature=sne_feature, return_attn=return_attn)
+            all_cls_scores, all_mask_preds, attns = self(inputs, texts, img_metas, sne_feature=sne_feature, return_attn=return_attn, **kwargs)
         else:
-            all_cls_scores, all_mask_preds = self(inputs, texts, img_metas, sne_feature=sne_feature)
+            all_cls_scores, all_mask_preds = self(inputs, texts, img_metas, sne_feature=sne_feature, **kwargs)
         cls_score, mask_pred = all_cls_scores[-1], all_mask_preds[-1]
         ori_h, ori_w, _ = img_metas[0]['ori_shape']
 

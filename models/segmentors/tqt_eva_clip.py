@@ -35,6 +35,10 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                  test_cfg=None,
                  init_cfg=None,
                  use_sne=True,
+                 prompt_cls=False,
+                 feature_phase='pixel',
+                 feature_mode='proj',
+                 use_context=True,
                  **args):
 
         # 1. 调用父类的 __init__ 方法，并传递所有它需要的参数
@@ -59,7 +63,13 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
 
         # 2. 在父类初始化完成后，只执行子类自己新增的逻辑
         self.use_sne = use_sne
-        print(f"use_sne: {self.use_sne}")
+        self.prompt_cls = prompt_cls
+        self.use_context = use_context
+        assert feature_phase in ['pixel', 'context'], "feature_phase must be 'pixel' or 'context'"
+        assert feature_mode in ['proj', 'add'], "feature_mode must be 'proj' or 'add'"
+        self.feature_phase = feature_phase
+        self.feature_mode = feature_mode
+        print(f"use_sne: {self.use_sne}, prompt_cls: {self.prompt_cls}, feature_phase: {self.feature_phase}, feature_mode: {self.feature_mode}")
         with open('/root/tqdm/dataset/ORFD/english_scene_dict.json', 'r') as f:
                 import json
                 self.scene2info = json.load(f)
@@ -75,217 +85,174 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             self.gamma_sne = nn.Parameter(torch.ones(text_dim) * 1e-4)
             nn.init.trunc_normal_(self.gamma_sne)
 
-        self.weather_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-        self.light_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-        self.road_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-        # --- 新增：保存类别名称列表 ---
-        self.weather_class_names = ['sunny', 'snowy', 'foggy', 'rainy']
-        self.road_class_names = ['paved road', 'unpaved road']
-        self.light_class_names = ['daytime', 'dusk', 'nighttime']
-        # -----------------------------
+        if self.prompt_cls:
+            self.weather_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
+            self.light_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
+            self.road_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
+            # --- 新增：保存类别名称列表 ---
+            self.weather_class_names = ['sunny', 'snowy', 'foggy', 'rainy']
+            self.road_class_names = ['paved road', 'unpaved road']
+            self.light_class_names = ['daytime', 'dusk', 'nighttime']
+            # -----------------------------
 
-        # --- 修正变量名并使用上面定义的列表 ---
-        self.weather_t0 = torch.cat([tokenize(
-            texts=f"{c}", context_length=self.context_length)  for c in self.weather_class_names]).to('cuda')
-        self.road_t0 = torch.cat([tokenize(
-            texts=f"{c}", context_length=self.context_length)  for c in self.road_class_names]).to('cuda')
-        self.light_t0 = torch.cat([tokenize(
-            texts=f"{c}", context_length=self.context_length)  for c in self.light_class_names]).to('cuda')
+            # --- 修正变量名并使用上面定义的列表 ---
+            self.weather_t0 = torch.cat([tokenize(
+                texts=f"{c}", context_length=self.context_length)  for c in self.weather_class_names]).to('cuda')
+            self.road_t0 = torch.cat([tokenize(
+                texts=f"{c}", context_length=self.context_length)  for c in self.road_class_names]).to('cuda')
+            self.light_t0 = torch.cat([tokenize(
+                texts=f"{c}", context_length=self.context_length)  for c in self.light_class_names]).to('cuda')
+        if self.use_context is False:
+            self.context_decoder = None
 
     def extract_feat(self, img):
         x = self.backbone.extract_feats(img)
         return x
 
-    def after_extract_feat(self, x):
-        x_orig = list(x[:-1])
-        # global_feat是开头的那个cls token， visual_embeddings是后面的patch tokens
-        global_feat, visual_embeddings = x[-1]
-        b_size = global_feat.shape[0]
-
-        visual_context = torch.cat([global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
-        text_embeddings = self.text_encoder(self.texts, context=self.contexts).expand(b_size, -1, -1)
-
-
-        # [b,1,c]
-        weather_embedding = self.text_encoder(self.weather_t0, context=self.weather_prompt).expand(b_size, -1, -1)
-        light_embedding = self.text_encoder(self.light_t0, context=self.light_prompt).expand(b_size, -1, -1)
-        road_embedding = self.text_encoder(self.road_t0, context=self.road_prompt).expand(b_size, -1, -1)
-
-        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
-
-        # 2. 归一化文本特征
-        weather_feature = F.normalize(weather_embedding, dim=-1, p=2)
-        light_feature = F.normalize(light_embedding, dim=-1, p=2)
-        road_feature = F.normalize(road_embedding, dim=-1, p=2)
-
-        # 3. 计算余弦相似度作为分类 logits
-        #    'bc,bnc->bn' 表示 (B, C) @ (B, N, C) -> (B, N)
-        weather_logits = torch.einsum('bc,bnc->bn', image_feature, weather_feature)
-        light_logits = torch.einsum('bc,bnc->bn', image_feature, light_feature)
-        road_logits = torch.einsum('bc,bnc->bn', image_feature, road_feature)
-
-        attr_logits = (weather_logits, light_logits, road_logits)
-
-        # --- 新增：根据 logits 获取预测的类别文本 ---
-        # 1. 找到每个 logits 中得分最高的索引
-        weather_preds_idx = weather_logits.argmax(dim=1)
-        light_preds_idx = light_logits.argmax(dim=1)
-        road_preds_idx = road_logits.argmax(dim=1)
-
-        # 2. 根据索引从类别名称列表中查找文本
-        #    这将为批次中的每个图像生成一个预测文本
-        pred_weather_texts = [self.weather_class_names[i] for i in weather_preds_idx]
-        pred_light_texts = [self.light_class_names[i] for i in light_preds_idx]
-        pred_road_texts = [self.road_class_names[i] for i in road_preds_idx]
-
-        tokenized_prompts_list = []
-        for i in range(b_size):
-            # 1. 构建当前图片专属的动态前缀 (已加入天气信息)
-            dynamic_prefix = f"A {pred_weather_texts[i]} scene during {pred_light_texts[i]} on a {pred_road_texts[i]}, "
-            
-            # 2. 创建新的文本提示 (e.g., "A sunny scene during daytime on a paved road, a clean origami of a car")
-            full_dynamic_prompts = [f"{dynamic_prefix}{c}" for c in self.class_names]
-            
-            # 3. Tokenize 新的提示
-            tokenized_prompts = torch.cat([tokenize(p, context_length=self.context_length) for p in full_dynamic_prompts]).to(global_feat.device)
-            current_dynamic_embedding = self.text_encoder(tokenized_prompts, context=self.contexts)
-            tokenized_prompts_list.append(current_dynamic_embedding)
-
-        # 5. 将列表中的所有张量堆叠成一个新的批次
-        text_embeddings = torch.stack(tokenized_prompts_list, dim=0)
-
-        if self.context_decoder is not None:
-            # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
-            text_diff = self.context_decoder(text_embeddings, visual_context)
-            text_embeddings = text_embeddings + self.gamma * text_diff
-        ret_text_emb = text_embeddings
-
-        visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
-        text_embeddings = F.normalize(text_embeddings, dim=-1, p=2)
-        # 做一次初步的分割, 余弦相似度
-        score_map = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
-
-        return x_orig, score_map, ret_text_emb, global_feat, attr_logits
-
-    def after_extract_feat_sne(self, x, sne):
-        x_orig = list(x[:-1])
+    def after_extract_feat(self, x, sne=None):
         if self.use_sne:
+            assert sne is not None, "sne feature is None"
+        x_orig = list(x[:-1])
+        if self.use_sne and sne is not None:
             sne_orig = list(sne[:-1])
-            # new_orig = [x_orig[i]+sne_orig[i] for i in range(len(x_orig))]
-            new_orig = (x_orig, sne_orig)
-            # new_orig = [self.img_sne_proj[i](torch.cat([x_orig[i], sne_orig[i]], dim=1)) for i in range(len(x_orig))]
+            if self.feature_phase == 'context':
+                if self.feature_mode == 'add':
+                    new_orig = [x_orig[i]+sne_orig[i] for i in range(len(x_orig))]
+                elif self.feature_mode == 'proj':
+                    new_orig = [self.img_sne_proj[i](torch.cat([x_orig[i], sne_orig[i]], dim=1)) for i in range(len(x_orig))]
+            else:
+                new_orig = (x_orig, sne_orig)
         else:
             new_orig = x_orig
         # global_feat[b,1,c]是开头的那个cls token， visual_embeddings是后面的patch tokens
         global_feat, visual_embeddings = x[-1]
-        global_sne_feat, sne_embeddings = sne[-1]
+        visual_context = torch.cat([global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
         b_size = global_feat.shape[0]
 
-        visual_context = torch.cat([global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
-        sne_context = torch.cat([global_sne_feat, sne_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
+        if self.use_sne and sne is not None:
+            global_sne_feat, sne_embeddings = sne[-1]
+            sne_context = torch.cat([global_sne_feat, sne_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
         
-        # [b,1,c]
-        weather_embedding = self.text_encoder(self.weather_t0, context=self.weather_prompt).expand(b_size, -1, -1)
-        light_embedding = self.text_encoder(self.light_t0, context=self.light_prompt).expand(b_size, -1, -1)
-        road_embedding = self.text_encoder(self.road_t0, context=self.road_prompt).expand(b_size, -1, -1)
+        if self.prompt_cls:
+            # [b,1,c]
+            weather_embedding = self.text_encoder(self.weather_t0, context=self.weather_prompt).expand(b_size, -1, -1)
+            light_embedding = self.text_encoder(self.light_t0, context=self.light_prompt).expand(b_size, -1, -1)
+            road_embedding = self.text_encoder(self.road_t0, context=self.road_prompt).expand(b_size, -1, -1)
 
-        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
+            image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
 
-        # 2. 归一化文本特征
-        weather_feature = F.normalize(weather_embedding, dim=-1, p=2)
-        light_feature = F.normalize(light_embedding, dim=-1, p=2)
-        road_feature = F.normalize(road_embedding, dim=-1, p=2)
+            # 2. 归一化文本特征
+            weather_feature = F.normalize(weather_embedding, dim=-1, p=2)
+            light_feature = F.normalize(light_embedding, dim=-1, p=2)
+            road_feature = F.normalize(road_embedding, dim=-1, p=2)
 
-        # 3. 计算余弦相似度作为分类 logits
-        #    'bc,bnc->bn' 表示 (B, C) @ (B, N, C) -> (B, N)
-        weather_logits = torch.einsum('bc,bnc->bn', image_feature, weather_feature)
-        light_logits = torch.einsum('bc,bnc->bn', image_feature, light_feature)
-        road_logits = torch.einsum('bc,bnc->bn', image_feature, road_feature)
+            # 3. 计算余弦相似度作为分类 logits
+            #    'bc,bnc->bn' 表示 (B, C) @ (B, N, C) -> (B, N)
+            weather_logits = torch.einsum('bc,bnc->bn', image_feature, weather_feature)
+            light_logits = torch.einsum('bc,bnc->bn', image_feature, light_feature)
+            road_logits = torch.einsum('bc,bnc->bn', image_feature, road_feature)
 
-        attr_logits = (weather_logits, light_logits, road_logits)
+            attr_logits = (weather_logits, light_logits, road_logits)
 
-        # --- 新增：根据 logits 获取预测的类别文本 ---
-        # 1. 找到每个 logits 中得分最高的索引
-        weather_preds_idx = weather_logits.argmax(dim=1)
-        light_preds_idx = light_logits.argmax(dim=1)
-        road_preds_idx = road_logits.argmax(dim=1)
+            # --- 新增：根据 logits 获取预测的类别文本 ---
+            # 1. 找到每个 logits 中得分最高的索引
+            weather_preds_idx = weather_logits.argmax(dim=1)
+            light_preds_idx = light_logits.argmax(dim=1)
+            road_preds_idx = road_logits.argmax(dim=1)
 
-        # 2. 根据索引从类别名称列表中查找文本
-        #    这将为批次中的每个图像生成一个预测文本
-        pred_weather_texts = [self.weather_class_names[i] for i in weather_preds_idx]
-        pred_light_texts = [self.light_class_names[i] for i in light_preds_idx]
-        pred_road_texts = [self.road_class_names[i] for i in road_preds_idx]
+            # 2. 根据索引从类别名称列表中查找文本
+            #    这将为批次中的每个图像生成一个预测文本
+            pred_weather_texts = [self.weather_class_names[i] for i in weather_preds_idx]
+            pred_light_texts = [self.light_class_names[i] for i in light_preds_idx]
+            pred_road_texts = [self.road_class_names[i] for i in road_preds_idx]
 
-        tokenized_prompts_list = []
-        for i in range(b_size):
-            # 1. 构建当前图片专属的动态前缀 (已加入天气信息)
-            dynamic_prefix = f"A {pred_weather_texts[i]} scene during {pred_light_texts[i]} on a {pred_road_texts[i]}, "
-            
-            # 2. 创建新的文本提示 (e.g., "A sunny scene during daytime on a paved road, a clean origami of a car")
-            full_dynamic_prompts = [f"{dynamic_prefix}{c}" for c in self.class_names]
-            
-            # 3. Tokenize 新的提示
-            tokenized_prompts = torch.cat([tokenize(p, context_length=self.context_length) for p in full_dynamic_prompts]).to(global_feat.device)
-            current_dynamic_embedding = self.text_encoder(tokenized_prompts, context=self.contexts)
-            tokenized_prompts_list.append(current_dynamic_embedding)
+            tokenized_prompts_list = []
+            for i in range(b_size):
+                # 1. 构建当前图片专属的动态前缀 (已加入天气信息)
+                dynamic_prefix = f"A {pred_weather_texts[i]} scene during {pred_light_texts[i]} on a {pred_road_texts[i]}, "
+                
+                # 2. 创建新的文本提示 (e.g., "A sunny scene during daytime on a paved road, a clean origami of a car")
+                full_dynamic_prompts = [f"{dynamic_prefix}{c}" for c in self.class_names]
+                
+                # 3. Tokenize 新的提示
+                tokenized_prompts = torch.cat([tokenize(p, context_length=self.context_length) for p in full_dynamic_prompts]).to(global_feat.device)
+                current_dynamic_embedding = self.text_encoder(tokenized_prompts, context=self.contexts)
+                tokenized_prompts_list.append(current_dynamic_embedding)
 
-        # 5. 将列表中的所有张量堆叠成一个新的批次
-        text_embeddings = torch.stack(tokenized_prompts_list, dim=0)
+            # 5. 将列表中的所有张量堆叠成一个新的批次
+            text_embeddings = torch.stack(tokenized_prompts_list, dim=0)
+            global_feat = (global_feat, attr_logits)
+        else:
+            text_embeddings = self.text_encoder(self.texts, context=self.contexts).expand(b_size, -1, -1)
 
         if self.context_decoder is not None:
             # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
             text_diff = self.context_decoder(text_embeddings, visual_context)
-            text_sne_diff = self.context_decoder_sne(text_embeddings, sne_context)
-            text_embeddings = text_embeddings + self.gamma * text_diff + self.gamma_sne * text_sne_diff
+            if self.use_sne and sne is not None:
+                text_sne_diff = self.context_decoder_sne(text_embeddings, sne_context)
+                text_embeddings = text_embeddings + self.gamma * text_diff + self.gamma_sne * text_sne_diff
+            else:
+                text_embeddings = text_embeddings + self.gamma * text_diff
         ret_text_emb = text_embeddings
 
         visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
-        sne_embeddings = F.normalize(sne_embeddings, dim=1, p=2)
         text_embeddings = F.normalize(text_embeddings, dim=-1, p=2)
         # 做一次初步的分割, 余弦相似度
-        score_map = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
-        score_map_sne = torch.einsum('bchw,bkc->bkhw', sne_embeddings, text_embeddings)
-
-        return new_orig, score_map, score_map_sne, ret_text_emb, global_feat, attr_logits
+        score_map_img = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
+        score_map = {
+            'img': score_map_img,
+        }
+        if self.use_sne and sne is not None:
+            sne_embeddings = F.normalize(sne_embeddings, dim=1, p=2)
+            score_map_sne = torch.einsum('bchw,bkc->bkhw', sne_embeddings, text_embeddings)
+            score_map.update(sne=score_map_sne)
+        
+        return new_orig, score_map, ret_text_emb, global_feat
 
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
         losses = dict()
 
         x = self.extract_feat(img)
-        if self.use_sne:
-            sne = kwargs['sne']
+        sne = kwargs.get('sne', None)
+        sne_feature = None
+        if self.use_sne and sne is not None:
             sne_feature = self.sne_backbone.extract_feats(sne)
-            x_orig, score_map, score_map_sne, text_emb, global_feat, attr_logits = self.after_extract_feat_sne(x, sne_feature)
+        x_orig, score_map_all, text_emb, global_feat = self.after_extract_feat(x, sne_feature)
+        score_map = score_map_all['img']
+
+        if self.feature_phase == 'pixel' and self.use_sne and sne is not None:
+            x_orig, sne_orig = x_orig
+        else:
+            sne_orig = None
+
+        if 'sne' in score_map_all:
+            score_map_sne = score_map_all['sne']
             # identity是什么？
             loss_score_map_sne = self.identity_head.forward_train(
                 score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
             losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
-            if isinstance(x_orig, tuple):
-                x_orig, sne_orig = x_orig
-        else:
-            x_orig, score_map, text_emb, global_feat, attr_logits = self.after_extract_feat(x)
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
-        weather_logits, light_logits, road_logits = attr_logits
-        road_list = []
-        weather_list = []
-        light_list = []
-        for i in range(len(img_metas)):
-            scene_name = img_metas[i]['ori_filename'].split('/')[0][1:].replace('_', '-')
-            road = self.scene2info[scene_name]['road'].split("_")[0] + ' road'
-            weather = self.scene2info[scene_name]['weather']
-            light = self.scene2info[scene_name]['light']
-            road_index = self.road_class_names.index(road)
-            weather_index = self.weather_class_names.index(weather)
-            light_index = self.light_class_names.index(light)
-            road_list.append(road_index)
-            weather_list.append(weather_index)
-            light_list.append(light_index)
-        road_target = torch.tensor(road_list).to(road_logits.device)
-        weather_target = torch.tensor(weather_list).to(weather_logits.device)
-        light_target = torch.tensor(light_list).to(light_logits.device)
-
-        if True:
+        if self.prompt_cls:
+            global_feat, attr_logits = global_feat
+            weather_logits, light_logits, road_logits = attr_logits
+            road_list = []
+            weather_list = []
+            light_list = []
+            for i in range(len(img_metas)):
+                scene_name = img_metas[i]['ori_filename'].split('/')[0][1:].replace('_', '-')
+                road = self.scene2info[scene_name]['road'].split("_")[0] + ' road'
+                weather = self.scene2info[scene_name]['weather']
+                light = self.scene2info[scene_name]['light']
+                road_index = self.road_class_names.index(road)
+                weather_index = self.weather_class_names.index(weather)
+                light_index = self.light_class_names.index(light)
+                road_list.append(road_index)
+                weather_list.append(weather_index)
+                light_list.append(light_index)
+            road_target = torch.tensor(road_list).to(road_logits.device)
+            weather_target = torch.tensor(weather_list).to(weather_logits.device)
+            light_target = torch.tensor(light_list).to(light_logits.device)
             loss_weather = F.cross_entropy(weather_logits/self.tau, weather_target, reduction='mean')
             loss_road = F.cross_entropy(road_logits/self.tau, road_target, reduction='mean')
             loss_light = F.cross_entropy(light_logits/self.tau, light_target, reduction='mean')
@@ -341,35 +308,36 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             losses.update(add_prefix(loss_score_map, 'scr_map'))
 
         # decode head loss
-        if self.use_sne:
-            loss_decode = self.decode_head.forward_train(
-                x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'], sne_feature=sne_orig)
-        else:
-            loss_decode = self.decode_head.forward_train(
-                x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'])
+        loss_decode = self.decode_head.forward_train(
+            x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'], sne_feature=sne_orig, feature_mode=self.feature_mode)
         losses.update(add_prefix(loss_decode, 'decode'))
 
         return losses
 
     def encode_decode(self, img, img_metas, return_attn=False, **kwargs):
         x = self.extract_feat(img)
-        if self.use_sne:
-            sne = kwargs['sne']
+        sne = kwargs.get('sne', None)
+        sne_feature = None
+        if self.use_sne and sne is not None:
             sne_feature = self.sne_backbone.extract_feats(sne)
-            x_orig, score_map, score_map_sne, text_emb, global_feat, attr_logits = self.after_extract_feat_sne(x, sne_feature)
-            if isinstance(x_orig, tuple):
-                x_orig, sne_orig = x_orig
+        x_orig, score_map_all, text_emb, global_feat = self.after_extract_feat(x, sne_feature)
+        score_map = score_map_all['img']
+
+        if self.feature_phase == 'pixel' and self.use_sne and sne is not None:
+            x_orig, sne_orig = x_orig
         else:
-            x_orig, score_map, text_emb, global_feat, attr_logits = self.after_extract_feat(x)
-        # x_orig, score_map, text_emb, global_feat = self.after_extract_feat(x)
+            sne_orig = None
+
+        if 'sne' in score_map_all:
+            score_map_sne = score_map_all['sne']
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
-        if self.use_sne:
-            out = self.decode_head.forward_test(
-                x, text_emb, img_metas, self.test_cfg, return_attn=return_attn, sne_feature=sne_orig)
-        else:
-            out = self.decode_head.forward_test(
-                x, text_emb, img_metas, self.test_cfg, return_attn=return_attn)
+        if self.prompt_cls:
+            global_feat, attr_logits = global_feat
+        
+        out = self.decode_head.forward_test(
+            x, text_emb, img_metas, self.test_cfg, return_attn=return_attn, sne_feature=sne_orig, feature_mode=self.feature_mode)
+        
         if return_attn:
             out, attn = out
         out = resize(
