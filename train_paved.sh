@@ -1,1 +1,0 @@
-python train.py --config /root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-paved-traversable.py

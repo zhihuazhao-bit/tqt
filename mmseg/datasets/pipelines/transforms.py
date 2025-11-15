@@ -296,9 +296,12 @@ class RandomFlip(object):
 
             # flip segs
             for key in results.get('seg_fields', []):
-                # use copy() to make numpy stride positive
+                # use copy() to make numpy stride positive 紧随其后的 .copy() 强制创建了一个全新的、内存独立的 NumPy 数组。
                 results[key] = mmcv.imflip(
                     results[key], direction=results['flip_direction']).copy()
+            if 'sne' in results:
+                results['sne'] = mmcv.imflip(
+                    results['sne'], direction=results['flip_direction']).copy()
         return results
 
     def __repr__(self):

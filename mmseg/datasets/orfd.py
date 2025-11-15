@@ -6,6 +6,8 @@ import torch
 import pandas as pd
 import warnings
 import time
+import torch.distributed as dist
+from collections import defaultdict
 from . import CityscapesDataset
 from .builder import DATASETS
 from .custom import CustomDataset
@@ -16,6 +18,8 @@ from mmseg.core import eval_metrics, intersect_and_union, pre_eval_to_metrics, e
 from prettytable import PrettyTable
 from collections import OrderedDict
 import json
+from .dataset_utils import getScores_self
+import swanlab
 
 @DATASETS.register_module()
 class ORFDDataset(CustomDataset):
@@ -97,7 +101,6 @@ class ORFDDataset(CustomDataset):
         #         ]
         #     }
         # }
-        
         self.scene_attr, self.map2scene = self.load_dicts()
         self.scene_type = kwargs.get('scene_type', None)
         assert self.scene_type in self.map2scene.keys(), f"scene_type should be in {self.map2scene.keys()}"
@@ -116,6 +119,18 @@ class ORFDDataset(CustomDataset):
         for s in self.scene_scope:
             assert s in self.all_scene_map.keys(), f"scene_scope should be in {self.all_scene_map.keys()}"
             self.all_scene.extend(self.all_scene_map[s])
+        # self.all_scene = [
+        #     # '0602-1107',  # 森林未铺装道路，晴天、白天
+        #     # '0613-1507-2' # 数据标注有问题
+        #     '2021-0222-1757'
+        #     ]
+        # self.all_scene = ['2021-0403-1858']
+        # self.all_scene = [
+        #     '2021-0403-1744', 
+        #     '0602-1107', '2021-0222-1743', '2021-0403-1858'
+        # ]
+        # self.all_scene = ['0609-1923', '2021-0223-1756']
+        
         print_log(f"Classes: {self.CLASSES}")
         
         super(ORFDDataset, self).__init__(
@@ -123,6 +138,29 @@ class ORFDDataset(CustomDataset):
             seg_map_suffix='_labelTrainIds.png',
             split=None,
             **kwargs)
+        self.img_dir, _ = osp.split(self.img_dir)
+        self.ann_dir, _ = osp.split(self.ann_dir)
+        # if kwargs.get('img_dir', 'training') == 'testing':
+        #     know_path = os.path.join(self.data_root, 'testing')
+        #     self.img_infos = self.load_annotations(know_path, self.img_suffix, know_path, self.seg_map_suffix, self.split)
+        #     # image_list_known = self.load_annotations(os.path.join(self.root, 'testing'), '.png', self.all_scene)
+        #     all_scene = []
+        #     type_map = {
+        #         'road': ['unpaved'],
+        #         'weather': ['rainy', 'snowy'],
+        #         'light': ['nighttime']
+        #     }
+        #     for s in type_map[self.scene_type]:
+        #         assert s in self.all_scene_map.keys(), f"scene_scope should be in {self.all_scene_map.keys()}"
+        #         all_scene.extend(self.all_scene_map[s])
+            
+        #     unknow_train_path = os.path.join(self.data_root, 'training')
+        #     unknow_val_path = os.path.join(self.data_root, 'validation')
+        #     image_list_unknown_train = self.load_annotations(unknow_train_path, '.png', unknow_train_path, '_labelTrainIds.png', target_scene=all_scene)
+        #     image_list_unknown_val = self.load_annotations(unknow_val_path, '.png', unknow_val_path, '_labelTrainIds.png', target_scene=all_scene)
+        #     self.img_infos += image_list_unknown_train + image_list_unknown_val
+        print('Found %d images in from %s' % (len(self.img_infos), self.data_root))
+            
 
 
     # 读取JSON文件
@@ -151,7 +189,7 @@ class ORFDDataset(CustomDataset):
             yield results
 
     def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix,
-                         split):
+                         split=None, target_scene=None):
         """Load annotation from directory.
 
         Args:
@@ -166,6 +204,8 @@ class ORFDDataset(CustomDataset):
         Returns:
             list[dict]: All image info of dataset.
         """
+        if target_scene is None:
+            target_scene = self.all_scene
         img_infos = []
         if split is not None:
             with open(split) as f:
@@ -181,13 +221,13 @@ class ORFDDataset(CustomDataset):
             self.dataset_mode = os.path.split(img_dir)[-1]
             for scene in os.listdir(img_dir):
                 sub_img_dir = os.path.join(img_dir, scene, 'image_data')
-                if scene[1:].replace("_","-") in self.all_scene:
+                if scene[1:].replace("_","-") in target_scene:
                     all_scene.append(scene)
                     for img in mmcv.scandir(sub_img_dir, img_suffix, recursive=True):
-                        img_info = dict(filename=os.path.join(scene, 'image_data', img))
+                        img_info = dict(filename=os.path.join(self.dataset_mode, scene, 'image_data', img))
                         if ann_dir is not None:
                             seg_map = img.replace(img_suffix, seg_map_suffix)
-                            img_info['ann'] = dict(seg_map=os.path.join(scene, 'gt_image', seg_map))
+                            img_info['ann'] = dict(seg_map=os.path.join(self.dataset_mode, scene, 'gt_image', seg_map))
                             img_infos.append(img_info)
                             # break
             img_infos = sorted(img_infos, key=lambda x: x['filename'])
@@ -236,6 +276,19 @@ class ORFDDataset(CustomDataset):
         table.add_row(prec_row)
         # print_log("\nConfusion Matrix (rows=Actual, cols=Pred):")
         print_log(table)
+        mprec, mrecall, mf1, miou, fwIoU, prec_road, rec_road, f1_road, iou_road = getScores_self(conf_mat)
+        print_log(f"Overall: mPrec {mprec*100:.2f}%, mRecall {mrecall*100:.2f}%, mF1 {mf1*100:.2f}%, mIoU {miou*100:.2f}%, fwIoU {fwIoU*100:.2f}%")
+        if len(class_names) == 2:
+            print_log(f"Class {class_names[1]}: Prec {prec_road*100:.2f}%, Recall {rec_road*100:.2f}%, F1 {f1_road*100:.2f}%, IoU {iou_road*100:.2f}%")
+        try:
+            metrics_result = {
+                'mPrec': mprec, 'mRecall': mrecall, 'mF1': mf1, 'mIoU': miou, 'fwIoU': fwIoU,
+                'prec_road': prec_road, 'rec_road': rec_road, 'f1_road': f1_road, 'iou_road': iou_road,
+            }
+            swanlab.log(metrics_result)
+        except Exception as e:
+            print_log(f"[Warn] Swanlab log error: {e}")
+            pass
 
     def evaluate(self,
                  results,
@@ -286,7 +339,8 @@ class ORFDDataset(CustomDataset):
         else:
             ret_metrics = pre_eval_to_metrics(results, metric)
 
-        file_stats_pd = pd.DataFrame(file_stats).T
+        print_log(f'file_stats: {len(file_stats)} items')
+        file_stats_pd = pd.DataFrame.from_dict(file_stats).T
         os.makedirs('./csv_result', exist_ok=True)
          # 修正后的正确代码:
         def get_attribute(scene_name, attr_key):
@@ -308,7 +362,8 @@ class ORFDDataset(CustomDataset):
             if attr_key == 'road':
                 # print(f'scene key: {scene_key}, scene_attributes: {scene_attributes}, road type: {scene_attributes.get(attr_key, "unknown")}')
                 road_type = scene_attributes.get(attr_key, 'unknown')
-                return road_type.split('_')[0]  # 只返回 'paved' 或 'unpaved'
+                # return road_type.split('_')[0]  # 只返回 'paved' 或 'unpaved'
+                return road_type
             else: 
                 return scene_attributes.get(attr_key, 'unknown')
 
@@ -318,8 +373,10 @@ class ORFDDataset(CustomDataset):
 
         if save_dir is not None and os.path.exists(save_dir):
             file_stats_pd.to_csv(osp.join(save_dir, f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+            print_log(f'file_stats saved to {save_dir}')
         else:
             file_stats_pd.to_csv(osp.join('./csv_result', f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
+            print_log(f'file_stats saved to ./csv_result')
         
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
@@ -329,6 +386,7 @@ class ORFDDataset(CustomDataset):
 
         class_num = len(class_names)
         for scene, group in file_stats_pd.groupby('scene'):
+            print(self.scene_attr.get(scene[1:].replace('_', '-'), {}))
             conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
             for i in range(class_num):
                 class_intersect = group[f'class{i}_intersect'].sum()
@@ -339,8 +397,11 @@ class ORFDDataset(CustomDataset):
             print_log(f'Confusion Matrix for scene {scene}:')
             self.pretty_print_conf_mat(conf_mat, class_names=class_names)
 
-        for key in ['weather', 'road', 'light']:
-            for value, group in file_stats_pd.groupby(key):
+        for key in [
+            ['weather', 'light'],
+            ['light', 'weather'],
+            ]:
+            for value, group in file_stats_pd.groupby(key[0]):
                 conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
                 for i in range(class_num):
                     class_intersect = group[f'class{i}_intersect'].sum()
@@ -348,8 +409,28 @@ class ORFDDataset(CustomDataset):
                     class_pred_label = group[f'class{i}_pred_label'].sum()
                     conf_mat[i, i] = class_intersect  # TP
                     conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
-                print_log(f'Confusion Matrix for {key} {value}:')
+                print_log(f'Confusion Matrix for {key[0]} {value}:')
                 self.pretty_print_conf_mat(conf_mat, class_names=class_names)
+                for subvalue, subgroup in group.groupby(key[1]):
+                    sub_conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
+                    for i in range(class_num):
+                        class_intersect = subgroup[f'class{i}_intersect'].sum()
+                        class_area_label = subgroup[f'class{i}_label'].sum()
+                        class_pred_label = subgroup[f'class{i}_pred_label'].sum()
+                        sub_conf_mat[i, i] = class_intersect  # TP
+                        sub_conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
+                        print_log(f'Confusion Matrix for {key[0]} {value} {key[1]} {subvalue}:')
+                        self.pretty_print_conf_mat(sub_conf_mat, class_names=class_names)
+
+        conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
+        for i in range(class_num):
+            class_intersect = file_stats_pd[f'class{i}_intersect'].sum()
+            class_area_label = file_stats_pd[f'class{i}_label'].sum()
+            class_pred_label = file_stats_pd[f'class{i}_pred_label'].sum()
+            conf_mat[i, i] = class_intersect  # TP
+            conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
+        print_log(f'Confusion Matrix for all:')
+        self.pretty_print_conf_mat(conf_mat, class_names=class_names)
 
         # summary table
         ret_metrics_summary = OrderedDict({

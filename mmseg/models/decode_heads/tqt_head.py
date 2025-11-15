@@ -17,6 +17,38 @@ from ..builder import build_assigner
 from ..utils import get_uncertain_point_coords_with_randomness
 
 
+class _ChannelAttention(nn.Module):
+
+    def __init__(self, channels, reduction=16, topk_ratio=None):
+        super().__init__()
+        hidden = max(channels // reduction, 1)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.shared_mlp = nn.Sequential(
+            nn.Conv2d(channels, hidden, kernel_size=1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hidden, channels, kernel_size=1, bias=False)
+        )
+        self.activation = nn.Sigmoid()
+        if topk_ratio is not None and topk_ratio <= 0:
+            raise ValueError('topk_ratio must be greater than 0 when provided.')
+        self.topk_ratio = topk_ratio
+
+    def forward(self, x):
+        avg_out = self.shared_mlp(self.avg_pool(x))
+        max_out = self.shared_mlp(self.max_pool(x))
+        attn = self.activation(avg_out + max_out)
+        if self.topk_ratio is not None and self.topk_ratio < 1.0:
+            b, c, _, _ = attn.shape
+            k = max(int(round(c * self.topk_ratio)), 1)
+            attn_flat = attn.view(b, c)
+            _, topk_idx = torch.topk(attn_flat, k=k, dim=1, largest=True, sorted=False)
+            keep_mask = attn_flat.new_zeros(attn_flat.shape)
+            keep_mask.scatter_(1, topk_idx, 1.0)
+            attn = attn * keep_mask.view(b, c, 1, 1)
+        return attn
+
+
 @HEADS.register_module()
 class tqtHead(tqdmHead):
 
@@ -40,6 +72,9 @@ class tqtHead(tqdmHead):
                  init_cfg=None,
                  text_proj=None,
                  use_sne=True,
+                 feature_phase='pixel',
+                 feature_mode='proj',
+                 channel_attn_topk_ratio=None,
                  **kwargs):
         super(tqtHead, self).__init__(
             in_channels=in_channels,
@@ -63,13 +98,45 @@ class tqtHead(tqdmHead):
             **kwargs
         )
         self.use_sne = use_sne
-        if self.use_sne:
-            self.sne_pixel_decoder = copy.deepcopy(self.pixel_decoder)
-            self.feature_projs = ModuleList()
-            # from low resolution to high resolution
-            for _ in range(num_transformer_feat_level+1):
-                self.feature_projs.append(
-                    Conv2d(feat_channels*2, feat_channels, kernel_size=1))
+        assert feature_phase in ['pixel', 'context'], "feature_phase must be 'pixel' or 'context'"
+        assert feature_mode in ['proj', 'add', 'concat'], "feature_mode must be 'proj', 'add', or 'concat'"
+        self.feature_phase = feature_phase
+        self.feature_mode = feature_mode
+        self.channel_attn_topk_ratio = channel_attn_topk_ratio
+        channel_list = self.in_channels if isinstance(self.in_channels, (list, tuple)) else [self.in_channels]
+        reduction = 16
+        # self.feat_channel_attn = nn.ModuleList([
+        #     _ChannelAttention(ch, reduction, topk_ratio=channel_attn_topk_ratio) for ch in channel_list
+        # ])
+        self.img_sne_proj = None
+        if self.feature_mode == 'proj':
+            if isinstance(self.in_channels, (list, tuple)):
+                in_ch_list = [in_ch * 2 for in_ch in self.in_channels]
+                out_ch_list = list(self.in_channels)
+            else:
+                in_ch_list = [self.in_channels * 2]
+                out_ch_list = [self.in_channels]
+            self.img_sne_proj = nn.ModuleList([
+                nn.Conv2d(in_ch, out_ch, kernel_size=1)
+                for in_ch, out_ch in zip(in_ch_list, out_ch_list)
+            ])
+
+        self.pixel_decoder_sne = None
+        self.context_mask_proj = None
+        self.context_memory_projs = None
+        if self.use_sne and self.feature_phase == 'context':
+            self.pixel_decoder_sne = copy.deepcopy(self.pixel_decoder)
+            if self.feature_mode in ['proj', 'concat']:
+                self.context_mask_proj = nn.Conv2d(out_channels * 2, out_channels, kernel_size=1)
+                self.context_memory_projs = nn.ModuleList([
+                    nn.Conv2d(feat_channels * 2, feat_channels, kernel_size=1)
+                    for _ in range(self.num_transformer_feat_level)
+                ])
+
+    def init_weights(self):
+        super().init_weights()
+        if self.pixel_decoder_sne is not None:
+            self.pixel_decoder_sne.init_weights()
 
     def forward(self, feats, texts, img_metas, sne_feature=None, return_mask_features=False, get_similarity=False, return_attn=False, feature_mode=None): ### need texts for pixel_decoder !
         """Forward function.
@@ -91,25 +158,42 @@ class tqtHead(tqdmHead):
                  h, w).
         """
         batch_size = len(img_metas)
+        current_feature_mode = feature_mode if feature_mode is not None else self.feature_mode
+        attns = None
+
         # 这一步使用text作为key和value，使用visual作为query，构建多尺度的特征。
-        if return_attn:
-            mask_features, multi_scale_memorys, attns = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
-        else:
-            mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
-        if self.use_sne and sne_feature is not None:
+        
+        if self.use_sne and self.feature_phase == 'context':
+            assert sne_feature is not None, "sne_feature should not be None when use_sne is True"
+            if self.pixel_decoder_sne is None:
+                raise RuntimeError('pixel_decoder_sne is not initialized for context fusion.')
             if return_attn:
-                sne_mask_features, sne_multi_scale_memorys, sne_attns = self.sne_pixel_decoder(sne_feature, texts)
-                attns['sne_attn_weights'] = sne_attns['attn_weights']
+                mask_img, multi_scale_img, attns_img = self.pixel_decoder(feats, texts)
+                mask_sne, multi_scale_sne, attns_sne = self.pixel_decoder_sne(sne_feature, texts)
             else:
-                sne_mask_features, sne_multi_scale_memorys = self.sne_pixel_decoder(sne_feature, texts)
-            assert feature_mode in ['proj', 'add'], "feature_mode must be 'proj' or 'add'"
-            if feature_mode == 'add':
-                multi_scale_memorys = [multi_scale_memorys[i]+sne_multi_scale_memorys[i] for i in range(len(multi_scale_memorys))]
-                mask_features = mask_features + sne_mask_features
-            else: # feature_mode == 'proj':
-                multi_scale_memorys = [self.feature_projs[i](torch.cat([multi_scale_memorys[i], sne_multi_scale_memorys[i]], dim=1)) for i in range(len(multi_scale_memorys))]
-                mask_features = self.feature_projs[-1](torch.cat([mask_features, sne_mask_features], dim=1))
-        # multi_scale_memorys (from low resolution to high resolution)
+                mask_img, multi_scale_img = self.pixel_decoder(feats, texts)
+                mask_sne, multi_scale_sne = self.pixel_decoder_sne(sne_feature, texts)
+            mask_features, multi_scale_memorys = self._merge_context_features(
+                mask_img, multi_scale_img, mask_sne, multi_scale_sne, current_feature_mode)
+            if return_attn:
+                attns = {'img': attns_img, 'sne': attns_sne}
+        else:
+            if self.use_sne and self.feature_phase == 'pixel':
+                assert sne_feature is not None, "sne_feature should not be None when use_sne is True"
+                if current_feature_mode == 'concat':
+                    feats = [torch.cat([feats[i], sne_feature[i]], dim=1) for i in range(len(feats))]
+                    # feats = [feats[i] * self.feat_channel_attn[i](feats[i]) for i in range(len(feats))]
+                elif current_feature_mode == 'add':
+                    feats = [feats[i] + sne_feature[i] for i in range(len(feats))]
+                elif current_feature_mode == 'proj':
+                    if self.img_sne_proj is None:
+                        raise RuntimeError('img_sne_proj is not initialized for proj fusion mode.')
+                    feats = [self.img_sne_proj[i](torch.cat([feats[i], sne_feature[i]], dim=1)) for i in range(len(feats))]
+            if return_attn:
+                mask_features, multi_scale_memorys, attns = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
+            else:
+                mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts) ### pixel_decoder need texts!
+
         decoder_inputs = []
         decoder_positional_encodings = []
         # 构建每一层的位置编码
@@ -175,6 +259,22 @@ class tqtHead(tqdmHead):
             return cls_pred_list, mask_pred_list, attns
         else:
             return cls_pred_list, mask_pred_list
+
+    def _merge_context_features(self, mask_img, multi_scale_img, mask_sne, multi_scale_sne, mode):
+        if mode == 'add':
+            mask_features = mask_img + mask_sne
+            multi_scale_memorys = [m_img + m_sne for m_img, m_sne in zip(multi_scale_img, multi_scale_sne)]
+        elif mode in ['proj', 'concat']:
+            if self.context_mask_proj is None or self.context_memory_projs is None:
+                raise RuntimeError('Context projection layers are not initialized for proj fusion mode.')
+            mask_features = self.context_mask_proj(torch.cat([mask_img, mask_sne], dim=1))
+            multi_scale_memorys = [
+                proj(torch.cat([m_img, m_sne], dim=1))
+                for proj, m_img, m_sne in zip(self.context_memory_projs, multi_scale_img, multi_scale_sne)
+            ]
+        else:
+            raise ValueError(f'Unsupported feature fusion mode: {mode}')
+        return mask_features, multi_scale_memorys
 
     def forward_train(self, x, texts, img_metas, gt_semantic_seg, train_cfg,
                       gt_labels, gt_masks, sne_feature=None, **kwargs):

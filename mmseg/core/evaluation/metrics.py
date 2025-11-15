@@ -225,7 +225,7 @@ def total_intersect_and_union_dict(results,
         recall = area_intersect / area_label
         precision = area_intersect / area_pred_label + 1e-10
         for i in range(num_classes):
-            per_file_stats[img_name]['scene'] = img_name.split('/')[0]
+            per_file_stats[img_name]['scene'] = img_name.split('/')[1]
             per_file_stats[img_name][f'class{i}_intersect'] = area_intersect[i].item()
             per_file_stats[img_name][f'class{i}_union'] = area_union[i].item()
             per_file_stats[img_name][f'class{i}_pred_label'] = area_pred_label[i].item()

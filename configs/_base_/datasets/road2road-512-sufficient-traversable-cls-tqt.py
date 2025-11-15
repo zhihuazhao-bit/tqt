@@ -75,8 +75,8 @@ test_dataset_dict = dict(
     data_root='dataset/road3d',
     img_dir='testing',
     ann_dir='testing',
-    scene_type='light',
-    scene_scope=['dusk'],
+    scene_type='road',
+    scene_scope=['paved', 'unpaved'],
     class_names=class_names,
     pipeline=test_pipeline)
 

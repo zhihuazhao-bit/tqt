@@ -2,7 +2,8 @@ import os
 import mmcv
 import torch
 import argparse
-
+import os.path as osp
+import swanlab
 from mmcv.utils import DictAction
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import get_dist_info, init_dist, load_checkpoint
@@ -22,12 +23,12 @@ def parse_args():
     parser.add_argument(
         '--config', 
         # default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
-        default=r'/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-pixel-proj-cls-nosne.py',
+        default=r'/root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_10k-r2r-512-sufficient-traversable-pixel-proj-cls-prefix.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
         # default='/root/tqdm/work_dirs/weights/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable/best_mIoU_iter_4000.pth',
-        default=r'/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-pixel-proj-cls-nosne/iter_1000.pth',
+        default=r'/root/tqdm/work_dirs/weights/tqt_eva_vit-b_1e-5_10k-r2r-512-sufficient-traversable-pixel-proj-cls-prefix/best_mIoU_iter_4000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
@@ -160,6 +161,14 @@ def main():
         distributed = False
     else:
         distributed = True
+        local_rank = int(os.environ['LOCAL_RANK'])
+        if local_rank == 0:
+            run = swanlab.init(
+            # 创建项目
+            project='tqdm-off-test',
+            experiment_name=osp.basename(args.config),
+            config=cfg._cfg_dict,
+        )
         init_dist(args.launcher, **cfg.dist_params)
 
     # build the dataloader
@@ -168,7 +177,7 @@ def main():
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=1,
-        workers_per_gpu=cfg.data.workers_per_gpu,
+        workers_per_gpu=2,
         dist=distributed,
         shuffle=False)
 

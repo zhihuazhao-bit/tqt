@@ -13,7 +13,7 @@ except:
     from timm.layers import drop_path, to_2tuple, trunc_normal_
     
 from .transformer import PatchDropout
-from .rope import VisionRotaryEmbedding, VisionRotaryEmbeddingFast
+from .rope import VisionRotaryEmbedding, VisionRotaryEmbeddingFast, VisionRotaryEmbeddingFastRect
 
 if os.getenv('ENV_TYPE') == 'deepspeed':
     try:
@@ -305,7 +305,9 @@ class PatchEmbed(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
         super().__init__()
-        img_size = to_2tuple(img_size)
+        if isinstance(img_size, int):
+            img_size = to_2tuple(img_size)
+        # img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
         num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
         self.patch_shape = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
@@ -399,13 +401,32 @@ class EVAVisionTransformer(nn.Module):
         
         if rope:
             half_head_dim = embed_dim // num_heads // 2
-            hw_seq_len = img_size // patch_size
-            self.rope = VisionRotaryEmbeddingFast(
+            # hw_seq_len = img_size // patch_size
+            # self.rope = VisionRotaryEmbeddingFast(
+            #     dim=half_head_dim,
+            #     pt_seq_len=pt_hw_seq_len,
+            #     ft_seq_len=hw_seq_len if intp_freq else None,
+            #     # patch_dropout=patch_dropout
+            # )
+            if isinstance(img_size, int):
+                img_size = (img_size, img_size)
+            h_seq_len = img_size[0] // patch_size
+            w_seq_len = img_size[1] // patch_size
+            self.rope = VisionRotaryEmbeddingFastRect(
                 dim=half_head_dim,
-                pt_seq_len=pt_hw_seq_len,
-                ft_seq_len=hw_seq_len if intp_freq else None,
+                pt_seq_len_h=pt_hw_seq_len,
+                pt_seq_len_w=pt_hw_seq_len,
+                ft_seq_len_h=h_seq_len if intp_freq else None,
+                ft_seq_len_w=w_seq_len if intp_freq else None,
                 # patch_dropout=patch_dropout
             )
+            # hw_seq_len = img_size[0] // patch_size
+            # self.rope = VisionRotaryEmbeddingFast(
+            #     dim=half_head_dim,
+            #     pt_seq_len=pt_hw_seq_len,
+            #     ft_seq_len=hw_seq_len if intp_freq else None,
+            #     # patch_dropout=patch_dropout
+            # )
         else: 
             self.rope = None
 

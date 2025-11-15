@@ -152,17 +152,20 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
             log_vars=log_vars,
             num_samples=len(data_batch['img_metas']))
         import swanlab
-        swanlab.log(log_vars)
-        if hasattr(self, 'gamma'):
-            swanlab.log({'gamma': torch.mean(self.gamma).item()})
-        if hasattr(self, 'gamma_sne'):
-            swanlab.log({'gamma_sne': torch.mean(self.gamma_sne).item()})
-        if hasattr(self, 'acc_road'):
-            swanlab.log({'acc_road': self.acc_road})
-        if hasattr(self, 'acc_weather'):
-            swanlab.log({'acc_weather': self.acc_weather})
-        if hasattr(self, 'acc_light'):
-            swanlab.log({'acc_light': self.acc_light})
+        import os
+        local_rank = int(os.environ['LOCAL_RANK'])
+        if local_rank == 0:
+            swanlab.log(log_vars)
+            if hasattr(self, 'gamma'):
+                swanlab.log({'gamma': torch.mean(self.gamma).item()})
+            if hasattr(self, 'gamma_sne'):
+                swanlab.log({'gamma_sne': torch.mean(self.gamma_sne).item()})
+            if hasattr(self, 'acc_road'):
+                swanlab.log({'acc_road': self.acc_road})
+            if hasattr(self, 'acc_weather'):
+                swanlab.log({'acc_weather': self.acc_weather})
+            if hasattr(self, 'acc_light'):
+                swanlab.log({'acc_light': self.acc_light})
 
         return outputs
 
@@ -174,6 +177,16 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
         not implemented with this method, but an evaluation hook.
         """
         output = self(**data_batch, **kwargs)
+        import swanlab
+        import os
+        local_rank = int(os.environ['LOCAL_RANK'])
+        if local_rank == 0:
+            if hasattr(self, 'val_acc_road'):
+                swanlab.log({'val_acc_road': self.val_acc_road})
+            if hasattr(self, 'val_acc_weather'):
+                swanlab.log({'val_acc_weather': self.val_acc_weather})
+            if hasattr(self, 'val_acc_light'):
+                swanlab.log({'val_acc_light': self.val_acc_light})
         return output
 
     @staticmethod

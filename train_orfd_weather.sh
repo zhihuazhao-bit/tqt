@@ -1,0 +1,1 @@
+python train.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-o2o-512-weather-traversable-pixel-proj-cls-prefix.py

@@ -32,6 +32,9 @@ class EvalHook(_EvalHook):
         if not self._should_evaluate(runner):
             return
 
+        if hasattr(self, 'save_img_sne_sum_val'):
+            self.save_img_sne_sum_val = 0
+
         from mmseg.apis import single_gpu_test
         results = single_gpu_test(
             runner.model,
@@ -84,6 +87,9 @@ class DistEvalHook(_DistEvalHook):
         tmpdir = self.tmpdir
         if tmpdir is None:
             tmpdir = osp.join(runner.work_dir, '.eval_hook')
+
+        if hasattr(self, 'save_img_sne_sum_val'):
+            self.save_img_sne_sum_val = 0
 
         from mmseg.apis import multi_gpu_test
         results = multi_gpu_test(

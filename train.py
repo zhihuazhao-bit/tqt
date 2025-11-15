@@ -34,7 +34,7 @@ def parse_args():
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
         # default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
-        default=r'/root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_10k-r2r-512-sufficient-traversable-pixel-proj-cls-prefix.py',
+        default=r'/root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-r2r-512-all-traversable-pixel-proj-cls-prefix-224x224.py',
         help='train config file path')
     parser.add_argument(
         '--work-dir', 
@@ -138,18 +138,28 @@ def main():
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':
         distributed = False
-    else:
-        distributed = True
-        init_dist(args.launcher, **cfg.dist_params)    
-
-    # dump config
-    cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
-    run = swanlab.init(
+        os.environ.setdefault('LOCAL_RANK', '0')
+        run = swanlab.init(
         # 设置项目
         project='tqdm-off2',
         experiment_name=osp.basename(args.config),
         config=cfg._cfg_dict,
     )
+    else:
+        distributed = True
+        local_rank = int(os.environ['LOCAL_RANK'])
+        if local_rank == 0:
+            run = swanlab.init(
+            # 创建项目
+            project='tqdm-off2',
+            experiment_name=osp.basename(args.config),
+            config=cfg._cfg_dict,
+        )
+        init_dist(args.launcher, **cfg.dist_params)    
+
+    # dump config
+    cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
+    
 
     # init the logger before other steps
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())

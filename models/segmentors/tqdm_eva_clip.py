@@ -249,10 +249,10 @@ class tqdm_EVA_CLIP(BaseSegmentor):
 
         return preds
 
-    def whole_inference(self, img, img_meta, rescale):
+    def whole_inference(self, img, img_meta, rescale, return_attn=False, **kwargs):
         """Inference with full image."""
 
-        seg_logit = self.encode_decode(img, img_meta)
+        seg_logit = self.encode_decode(img, img_meta, return_attn=return_attn, **kwargs)
         if rescale:
             # support dynamic shape for onnx
             if torch.onnx.is_in_onnx_export():
@@ -292,7 +292,7 @@ class tqdm_EVA_CLIP(BaseSegmentor):
         if self.test_cfg.mode == 'slide':
             seg_logit = self.slide_inference(img, img_meta, rescale, return_attn=return_attn, **kwargs)
         else:
-            seg_logit = self.whole_inference(img, img_meta, rescale, **kwargs)
+            seg_logit = self.whole_inference(img, img_meta, rescale, return_attn=return_attn, **kwargs)
         output = F.softmax(seg_logit, dim=1)
         flip = img_meta[0]['flip']
         if flip:

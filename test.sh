@@ -1,1 +1,1 @@
-bash dist_test.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512.py /root/tqdm/work_dirs_o2o_sun_base/tqdm_eva_vit-b_1e-5_5k-o2o-512/best_mIoU_iter_5000.pth 2 --eval mIoU
+nohup bash dist_test.sh /root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512.py /root/tqdm/work_dirs_o2o_sun_base/tqdm_eva_vit-b_1e-5_5k-o2o-512/best_mIoU_iter_5000.pth 2 --eval mIoU >./work_dirs/test_logs/tqdm_eva_vit-b_1e-5_5k-o2o-512/log.txt 2>&1 &

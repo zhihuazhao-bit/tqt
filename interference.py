@@ -1,230 +1,220 @@
-import os
-import mmcv
-import torch
 import argparse
+from pathlib import Path
+from typing import Dict, Optional
 
-from mmcv.utils import DictAction
-from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
-from mmcv.runner import get_dist_info, init_dist, load_checkpoint
+import cv2
+import mmcv
+import numpy as np
+import torch
+from mmcv import Config
+from mmcv.runner import load_checkpoint
 
-if not hasattr(MMDistributedDataParallel, '_use_replicated_tensor_module'):
-    MMDistributedDataParallel._use_replicated_tensor_module = False
-
-from mmseg.models import build_segmentor
-from mmseg.apis import multi_gpu_test, single_gpu_test
+from mmseg.apis import build_segmentor
 from mmseg.datasets import build_dataloader, build_dataset
 
-import models
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description='mmseg test (and eval) a model')
-    parser.add_argument(
-        '--config', 
-        default='/root/tqdm/configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls.py',
-        help='test config file path')
-    parser.add_argument(
-        '--checkpoint', 
-        default='/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable-cls/iter_1000.pth',
-        help='checkpoint file')
-    parser.add_argument(
-        '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
-    parser.add_argument('--out', help='output result file in pickle format')
-    parser.add_argument(
-        '--format-only',
-        action='store_true',
-        help='Format the output results without perform evaluation. It is'
-        'useful when you want to format the result to a specific format and '
-        'submit it to the test server')
-    parser.add_argument(
-        '--eval',
-        default=False,
-        type=str,
-        nargs='+',
-        help='evaluation metrics, which depends on the dataset, e.g., "mIoU"'
-        ' for generic datasets, and "cityscapes" for Cityscapes')
-    parser.add_argument(
-        '--show', 
-        default=True,
-        action='store_true', 
-        help='show results')
-    parser.add_argument(
-        '--show-dir', 
-        default='./work_dirs/test/tqt-eva-b-sufficient-traversable-cls',
-        help='directory where painted images will be saved')
-    parser.add_argument(
-        '--gpu-collect',
-        action='store_true',
-        help='whether to use gpu to collect results.')
-    parser.add_argument(
-        '--tmpdir',
-        help='tmp directory used for collecting results from multiple '
-        'workers, available when gpu_collect is not specified')
-    parser.add_argument(
-        '--options', nargs='+', action=DictAction, help='custom options')
-    parser.add_argument(
-        '--eval-options',
-        nargs='+',
-        action=DictAction,
-        help='custom options for evaluation')
-    parser.add_argument(
-        '--launcher',
-        choices=['none', 'pytorch', 'slurm', 'mpi'],
-        default='none',
-        help='job launcher')
-    parser.add_argument(
-        '--opacity',
-        type=float,
-        default=0.5,
-        help='Opacity of painted segmentation map. In (0, 1] range.')
-    parser.add_argument(
-        '--save_dir',
-        type=str,
-        default='./work_dirs/test/')
-    parser.add_argument('--local-rank', type=int, default=0)
-    parser.add_argument('--aug_ratio_start', type=float, default=-1)
-    parser.add_argument('--exp_tag', default=None)
-    args = parser.parse_args()
-    if 'LOCAL_RANK' not in os.environ:
-        os.environ['LOCAL_RANK'] = str(args.local_rank)
-    return args
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Run inference on a single scene and create 2x2 previews.')
+    parser.add_argument('--config', required=True, help='Path to the mmseg config file.')
+    parser.add_argument('--checkpoint', required=True, help='Model checkpoint for inference.')
+    parser.add_argument('--scene-dir', required=True, help='Scene directory containing image/normal/label folders.')
+    parser.add_argument('--output-dir', default='./work_dirs/scene_preview', help='Directory to save visualization results.')
+    parser.add_argument('--image-dirname', default='image data', help='Sub-folder containing RGB images.')
+    parser.add_argument('--normal-dirname', default='normal data', help='Sub-folder containing normal maps.')
+    parser.add_argument('--label-dirname', default='label', help='Sub-folder containing label maps.')
+    parser.add_argument('--device', default='cuda:0', help='Device for inference, e.g. "cuda:0" or "cpu".')
+    parser.add_argument('--alpha', type=float, default=0.6, help='Overlay weight for prediction vs. original image.')
+    parser.add_argument('--limit', type=int, default=-1, help='Maximum number of frames to process (-1 for all).')
+    parser.add_argument('--progress', action='store_true', help='Show a progress bar during processing.')
+    return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    config_name = os.path.basename(args.config).split('.')[0]
-    if args.show_dir:
-        args.show_dir = os.path.join(args.show_dir, config_name)
-    if args.save_dir:
-        args.save_dir = os.path.join(args.save_dir, config_name)
+def _patch_dataset_cfg(cfg: Dict, args: argparse.Namespace) -> Dict:
+    def _apply(sub_cfg: Dict) -> Dict:
+        updated = sub_cfg.copy()
+        if 'data_root' in updated:
+            updated['data_root'] = args.scene_dir
+        if 'img_dir' in updated:
+            updated['img_dir'] = args.image_dirname
+        if 'img_prefix' in updated:
+            updated['img_prefix'] = str(Path(args.scene_dir) / args.image_dirname)
+        if 'ann_dir' in updated:
+            updated['ann_dir'] = args.label_dirname
+        if 'sne_dir' in updated:
+            updated['sne_dir'] = args.normal_dirname
+        if 'split' in updated:
+            updated['split'] = None
+        for key in ('dataset', 'datasets'):
+            if key in updated:
+                if isinstance(updated[key], list):
+                    updated[key] = [_apply(item) for item in updated[key]]
+                elif isinstance(updated[key], dict):
+                    updated[key] = _apply(updated[key])
+        return updated
 
-    assert args.out or args.eval or args.format_only or args.show \
-        or args.show_dir, \
-        ('Please specify at least one operation (save/eval/format/show the '
-         'results / save the results) with the argument "--out", "--eval"'
-         ', "--format-only", "--show" or "--show-dir"')
+    return _apply(cfg)
 
-    if args.eval and args.format_only:
-        raise ValueError('--eval and --format_only cannot be both specified')
 
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
-        raise ValueError('The output file must be a pkl file.')
+def _ensure_palette(model, dataset) -> np.ndarray:
+    palette = getattr(model, 'PALETTE', None)
+    if palette is None:
+        palette = getattr(dataset, 'PALETTE', None)
+    if palette is None:
+        palette = [[0, 0, 0], [255, 255, 255]]
+    return np.array(palette, dtype=np.uint8)
 
-    cfg = mmcv.Config.fromfile(args.config)
-    # 导入 SimpleTokenizer
-    from models.backbones.utils import SimpleTokenizer
 
-    # 初始化 SimpleTokenizer
-    tokenizer = SimpleTokenizer()
-    import numpy as np
-    tokens = np.zeros((len(cfg.class_names)), dtype=np.int64)
-    sot_token = tokenizer.encoder["<|startoftext|>"]
-    eot_token = tokenizer.encoder["<|endoftext|>"]
-    # 示例：对 class_names 中的每个类别名称进行分词
-    for i, class_name in enumerate(cfg.class_names):
-        token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
-        tokens[i] = len(token) + 12
-    cfg.model.context_length = int(tokens.max())
-    cfg.model.eva_clip.context_length = int(tokens.max())+8
-    
-    if args.options is not None:
-        cfg.merge_from_dict(args.options)
+def _indices_to_color(mask: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    max_label = int(mask.max()) if mask.size else 0
+    if max_label >= palette.shape[0]:
+        extra = palette[-1][None, :]
+        repeat = max_label - palette.shape[0] + 1
+        palette = np.concatenate([palette, np.repeat(extra, repeat, axis=0)], axis=0)
+    return palette[mask]
 
-    # set cudnn_benchmark
-    if cfg.get('cudnn_benchmark', False):
-        torch.backends.cudnn.benchmark = True
 
-    if args.aug_test:
-        if args.aug_ratio_start > 0.:
-            cfg.data.test.pipeline[1].img_ratios = [
-                args.aug_ratio_start, 1.0, 1.25, 1.5, 1.75
-            ]
-        # hard code index
-        else:
-            cfg.data.test.pipeline[1].img_ratios = [
-                0.5, 0.75, 1.0, 1.25, 1.5, 1.75
-            ]
-        cfg.data.test.pipeline[1].flip = True
+def _to_display(img: np.ndarray, target_shape: tuple[int, int]) -> np.ndarray:
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    if img.shape[2] == 4:
+        img = img[..., :3]
+    if img.dtype != np.uint8:
+        img = np.clip(img, 0, 255).astype(np.uint8)
+    if img.shape[:2] != target_shape:
+        img = cv2.resize(img, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_LINEAR)
+    return img
 
-    if args.checkpoint != 'None':
-        cfg.model.pretrained = None
-    cfg.data.test.test_mode = True
 
-    # init distributed env first, since logger depends on the dist info.
-    if args.launcher == 'none':
-        distributed = False
+def _normal_to_rgb(normal: Optional[np.ndarray], target_shape: tuple[int, int]) -> np.ndarray:
+    if normal is None:
+        return np.zeros((target_shape[0], target_shape[1], 3), dtype=np.uint8)
+    normal = normal.astype(np.float32)
+    vmin, vmax = normal.min(), normal.max()
+    if vmax - vmin < 1e-6:
+        normal[:] = 0
     else:
-        distributed = True
-        init_dist(args.launcher, **cfg.dist_params)
+        normal = (normal - vmin) / (vmax - vmin)
+    normal = (normal * 255).clip(0, 255).astype(np.uint8)
+    return _to_display(normal, target_shape)
 
-    # build the dataloader
-    # TODO: support multiple images per gpu (only minor changes are needed)
-    dataset = build_dataset(cfg.data.int)
+
+def main() -> None:
+    args = parse_args()
+    cfg = Config.fromfile(args.config)
+
+    cfg.model.pretrained = None
+    cfg.model.train_cfg = None
+    cfg.data.test = _patch_dataset_cfg(cfg.data.test, args)
+    cfg.data.test.setdefault('test_mode', True)
+
+    dataset = build_dataset(cfg.data.test)
+    workers = cfg.data.get('workers_per_gpu', 0)
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=1,
-        workers_per_gpu=cfg.data.workers_per_gpu,
-        dist=distributed,
-        shuffle=False)
+        workers_per_gpu=workers,
+        dist=False,
+        shuffle=False
+    )
 
-    # build the model and load checkpoint
-    cfg.model.train_cfg = None
-    cfg.model.class_names = list(dataset.CLASSES)
-
+    device = torch.device(args.device)
     model = build_segmentor(cfg.model, test_cfg=cfg.get('test_cfg'))
-    if args.checkpoint == 'None':
-        model.CLASSES = dataset.CLASSES
-        model.PALETTE = dataset.PALETTE
-    elif "CLIP-ViT" in args.checkpoint:
-        model.backbone.init_weights(args.checkpoint)
-        model.text_encoder.init_weights(args.checkpoint)
-        model.CLASSES = dataset.CLASSES
-        model.PALETTE = dataset.PALETTE        
+    checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
+
+    if 'CLASSES' in checkpoint.get('meta', {}):
+        model.CLASSES = checkpoint['meta']['CLASSES']
     else:
-        checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
+        model.CLASSES = dataset.CLASSES
 
-        if 'CLASSES' in checkpoint.get('meta', {}):
-            model.CLASSES = checkpoint['meta']['CLASSES']
-        else:
-            print('"CLASSES" not found in meta, use dataset.CLASSES instead')
-            model.CLASSES = dataset.CLASSES
-        if 'PALETTE' in checkpoint.get('meta', {}):
-            model.PALETTE = checkpoint['meta']['PALETTE']
-        else:
-            print('"PALETTE" not found in meta, use dataset.PALETTE instead')
-            model.PALETTE = dataset.PALETTE
-
-    # clean gpu memory when starting a new evaluation.
-    torch.cuda.empty_cache()
-    eval_kwargs = {} if args.eval_options is None else args.eval_options
-
-    # Deprecated
-    efficient_test = eval_kwargs.get('efficient_test', False)
-
-    if not distributed:
-        print("not distributed")
-        model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir,
-                                  efficient_test, args.opacity)
+    if 'PALETTE' in checkpoint.get('meta', {}):
+        model.PALETTE = checkpoint['meta']['PALETTE']
     else:
-        print("distributed")
-        model = MMDistributedDataParallel(
-            model.cuda(),
-            device_ids=[torch.cuda.current_device()],
-            broadcast_buffers=False)
-        outputs = multi_gpu_test(model, data_loader, args.tmpdir,
-                                 args.gpu_collect, efficient_test)
+        model.PALETTE = getattr(dataset, 'PALETTE', None)
 
-    rank, _ = get_dist_info()
-    if rank == 0:
-        if args.out:
-            print(f'\nwriting results to {args.out}')
-            mmcv.dump(outputs, args.out)
-        kwargs = {} if args.eval_options is None else args.eval_options
-        if args.format_only:
-            dataset.format_results(outputs, **kwargs)
-        if args.eval:
-            dataset.evaluate(outputs, args.eval, save_dir=args.save_dir, **kwargs)
+    model.to(device)
+    model.eval()
+
+    palette = _ensure_palette(model, dataset)
+    scene_name = Path(args.scene_dir).name
+    output_root = Path(args.output_dir) / scene_name
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    total = len(dataset)
+    if args.limit >= 0:
+        total = min(total, args.limit)
+    progress_bar = mmcv.ProgressBar(total) if args.progress else None
+
+    processed = 0
+    for data in data_loader:
+        if 0 <= args.limit <= processed:
+            break
+
+        img_meta = data['img_metas'].data[0][0]
+        img_tensor = data['img'].data[0].to(device)
+
+        sne_tensor = data.get('sne')
+        if sne_tensor is not None:
+            sne_tensor = sne_tensor.data[0].to(device)
+
+        with torch.no_grad():
+            if sne_tensor is not None:
+                result = model.simple_test(img_tensor, [img_meta], rescale=True, sne=sne_tensor)
+            else:
+                result = model.simple_test(img_tensor, [img_meta], rescale=True)
+
+        seg_pred = result[0].astype(np.uint8)
+        base_path = Path(img_meta.get('ori_filename', img_meta['filename']))
+        base_name = base_path.stem
+
+        rgb_img = mmcv.imread(str(base_path), channel_order='rgb')
+        target_shape = rgb_img.shape[:2]
+        rgb_display = _to_display(rgb_img, target_shape)
+
+        normal_path = img_meta.get('sne_filename')
+        if normal_path is None:
+            normal_path = Path(args.scene_dir) / args.normal_dirname / (base_name + base_path.suffix)
+        normal_path = Path(normal_path)
+        normal_img = mmcv.imread(str(normal_path), flag='unchanged') if normal_path.exists() else None
+        normal_display = _normal_to_rgb(normal_img, target_shape)
+
+        gt_tensor = data.get('gt_semantic_seg')
+        if gt_tensor is not None:
+            label_mask = gt_tensor.data[0].squeeze().cpu().numpy().astype(np.uint8)
+            gt_color = _indices_to_color(label_mask, palette)
+        else:
+            label_path = Path(args.scene_dir) / args.label_dirname / (base_name + base_path.suffix)
+            if label_path.exists():
+                label_img = mmcv.imread(str(label_path), flag='unchanged')
+                if label_img.ndim == 2:
+                    gt_color = _indices_to_color(label_img.astype(np.uint8), palette)
+                else:
+                    gt_color = _to_display(label_img[..., :3], target_shape)
+            else:
+                gt_color = np.zeros((target_shape[0], target_shape[1], 3), dtype=np.uint8)
+
+        pred_color = _indices_to_color(seg_pred, palette)
+        pred_color = _to_display(pred_color, target_shape)
+        gt_color = _to_display(gt_color, target_shape)
+        normal_display = _to_display(normal_display, target_shape)
+        overlay = (args.alpha * pred_color + (1.0 - args.alpha) * rgb_display).astype(np.uint8)
+
+        top_row = np.concatenate([rgb_display, normal_display], axis=1)
+        bottom_row = np.concatenate([overlay, gt_color], axis=1)
+        collage = np.concatenate([top_row, bottom_row], axis=0)
+        collage_bgr = cv2.cvtColor(collage, cv2.COLOR_RGB2BGR)
+
+        save_path = output_root / f'{base_name}.png'
+        cv2.imwrite(str(save_path), collage_bgr)
+
+        processed += 1
+        if progress_bar is not None:
+            progress_bar.update(1)
+
+    if progress_bar is not None:
+        progress_bar.bar.finish()
+
+    print(f'Done. Saved {processed} preview images to {output_root}.')
+
 
 if __name__ == '__main__':
     main()

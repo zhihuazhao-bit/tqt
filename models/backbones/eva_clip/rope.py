@@ -150,3 +150,92 @@ class VisionRotaryEmbeddingFast(nn.Module):
             return  t * self.freqs_cos + rotate_half(t) * self.freqs_sin
         else:
             return torch.cat([vpt, t * self.freqs_cos + rotate_half(t) * self.freqs_sin], dim=2)
+
+
+class VisionRotaryEmbeddingFastRect(nn.Module):
+    def __init__(
+        self,
+        dim,
+        pt_seq_len_h,
+        pt_seq_len_w,
+        ft_seq_len_h=None,
+        ft_seq_len_w=None,
+        custom_freqs = None,
+        freqs_for = 'lang',
+        theta = 10000,
+        max_freq = 10,
+        num_freqs = 1,
+        patch_dropout = 0.,
+        vpt_num=0,
+    ):
+        super().__init__()
+        if custom_freqs:
+            freqs = custom_freqs
+        elif freqs_for == 'lang':
+            freqs = 1. / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
+        elif freqs_for == 'pixel':
+            freqs = torch.linspace(1., max_freq / 2, dim // 2) * pi
+        elif freqs_for == 'constant':
+            freqs = torch.ones(num_freqs).float()
+        else:
+            raise ValueError(f'unknown modality {freqs_for}')
+
+        # --- 开始修改 ---
+        if ft_seq_len_h is None: ft_seq_len_h = pt_seq_len_h
+        if ft_seq_len_w is None: ft_seq_len_w = pt_seq_len_w
+
+        # 为高度和宽度分别生成位置序列
+        t_h = torch.arange(ft_seq_len_h) / ft_seq_len_h * pt_seq_len_h
+        t_w = torch.arange(ft_seq_len_w) / ft_seq_len_w * pt_seq_len_w
+
+        # 分别计算高度和宽度的频率
+        freqs_h = torch.einsum('..., f -> ... f', t_h, freqs)
+        freqs_h = repeat(freqs_h, '... n -> ... (n r)', r = 2)
+
+        freqs_w = torch.einsum('..., f -> ... f', t_w, freqs)
+        freqs_w = repeat(freqs_w, '... n -> ... (n r)', r = 2)
+        # --- 结束修改 ---
+
+        freqs = broadcat((freqs_h[:, None, :], freqs_w[None, :, :]), dim = -1) 
+
+        freqs_cos = freqs.cos().view(-1, freqs.shape[-1])
+        freqs_sin = freqs.sin().view(-1, freqs.shape[-1])
+
+        self.patch_dropout = patch_dropout
+
+        self.register_buffer("freqs_cos", freqs_cos)
+        self.register_buffer("freqs_sin", freqs_sin)
+
+        logging.info(f'Shape of rope freq: {self.freqs_cos.shape}')
+
+        self.vpt_num = vpt_num
+
+    def forward(self, t, patch_indices_keep=None):
+        if self.vpt_num == 0:
+            t = t
+        else:
+            vpt = t[:, :, :self.vpt_num]
+            t = t[:, :, self.vpt_num:]
+
+        if patch_indices_keep is not None:
+            batch = t.size()[0]
+            batch_indices = torch.arange(batch)
+            batch_indices = batch_indices[..., None]
+
+            freqs_cos = repeat(self.freqs_cos, 'i j -> n i m j', n=t.shape[0], m=t.shape[1])
+            freqs_sin = repeat(self.freqs_sin, 'i j -> n i m j', n=t.shape[0], m=t.shape[1])
+
+            freqs_cos = freqs_cos[batch_indices, patch_indices_keep]
+            freqs_cos = rearrange(freqs_cos, 'n i m j -> n m i j')
+            freqs_sin = freqs_sin[batch_indices, patch_indices_keep]
+            freqs_sin = rearrange(freqs_sin, 'n i m j -> n m i j')
+
+            if self.vpt_num == 0:
+                return  t * freqs_cos + rotate_half(t) * freqs_sin
+            else:
+                return torch.cat([vpt, t * freqs_cos + rotate_half(t) * freqs_sin], dim=2)
+    
+        if self.vpt_num == 0:
+            return  t * self.freqs_cos + rotate_half(t) * self.freqs_sin
+        else:
+            return torch.cat([vpt, t * self.freqs_cos + rotate_half(t) * self.freqs_sin], dim=2)
