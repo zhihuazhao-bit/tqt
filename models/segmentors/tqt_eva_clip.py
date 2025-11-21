@@ -113,8 +113,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             self.save_img_sne_sum_val = 0
             # self.backbone 是在父类中被初始化的，这里可以直接使用
             self.context_decoder_sne = copy.deepcopy(self.context_decoder)
-            in_channels = 768 * 2 
-            out_channels = 768
+            in_channels = 512 * 2 
+            out_channels = 512
             if self.use_cross_attn:
                 self.img_sne_attn = nn.ModuleList(
                     [BidirectionalCrossAttention(768) for _ in range(4)]
@@ -276,7 +276,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             score_map_sne = torch.einsum('bchw,bkc->bkhw', sne_embeddings, text_embeddings)
             score_map.update(sne=score_map_sne)
         
-        return new_orig, score_map, ret_text_emb, global_feat
+        return new_orig, score_map, ret_text_emb, global_feat, (x[-1],sne[-1])
 
     def save_img_sne_merge(self, img, sne, img_metas, masks, info=None):
         # 合并sne±img，并转化为img保存。
@@ -345,20 +345,40 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 self.save_img_sne_merge(img, sne, img_metas, masks)
             sne_feature = self.sne_backbone.extract_feats(sne)
             
-        x_orig, score_map_all, text_emb, global_feat = self.after_extract_feat(x, sne_feature)
+        x_orig, score_map_all, text_emb, global_feat, score = self.after_extract_feat(x, sne_feature)
+
+
         score_map = score_map_all['img']
 
         if isinstance(x_orig, tuple):
             x_orig, sne_orig = x_orig
         else:
             sne_orig = None
-
-        if 'sne' in score_map_all:
-            score_map_sne = score_map_all['sne']
+        
+        if self.use_sne and self.feature_phase == 'pixel' and self.feature_mode == 'proj':
+            x_score, sne_score = score
+            _, x_visual = x_score
+            _, sne_visual = sne_score
+            visual_embeddings = self.img_sne_proj[0](torch.cat([x_visual, sne_visual], dim=1))
+            visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
+            text_embeddings = F.normalize(text_emb, dim=-1, p=2)
+            # 做一次初步的分割, 余弦相似度
+            score_map_img = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
+            score_map_all = {
+                'img_sne': score_map_img,
+            }
+            score_map_fusion = score_map_all['img_sne']
             # identity是什么？
-            loss_score_map_sne = self.identity_head.forward_train(
-                score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-            losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
+            loss_score_map_fusion = self.identity_head.forward_train(
+                score_map_fusion/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+            losses.update(add_prefix(loss_score_map_fusion, 'img_sne_map'))
+
+        # if 'sne' in score_map_all:
+        #     score_map_sne = score_map_all['sne']
+        #     # identity是什么？
+        #     loss_score_map_sne = self.identity_head.forward_train(
+        #         score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+        #     losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
         if self.prompt_cls:
@@ -456,11 +476,11 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             losses.update(add_prefix(loss_reg_v, 'reg.visual'))
 
         # vision-language regularization
-        if self.identity_head is not None:
-            # identity是什么？
-            loss_score_map = self.identity_head.forward_train(
-                score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-            losses.update(add_prefix(loss_score_map, 'scr_map'))
+        # if self.identity_head is not None:
+        #     # identity是什么？
+        #     loss_score_map = self.identity_head.forward_train(
+        #         score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+        #     losses.update(add_prefix(loss_score_map, 'scr_map'))
 
         # decode head loss
         loss_decode = self.decode_head.forward_train(
@@ -476,7 +496,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         sne_feature = None
         if self.use_sne and sne is not None:
             sne_feature = self.sne_backbone.extract_feats(sne)
-        x_orig, score_map_all, text_emb, global_feat = self.after_extract_feat(x, sne_feature)
+        x_orig, score_map_all, text_emb, global_feat, _ = self.after_extract_feat(x, sne_feature)
         score_map = score_map_all['img']
 
         if self.prompt_cls:

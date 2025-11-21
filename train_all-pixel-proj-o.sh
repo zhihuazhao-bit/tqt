@@ -4,8 +4,10 @@ scene_type='all'
 # python3 -m torch.distributed.launch --nproc_per_node=$GPUS train.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-r2r-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224-pixel-proj.py --launcher pytorch --gpus $GPUS
 # wait
 
-python3 -m torch.distributed.launch --nproc_per_node=$GPUS train.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-o2o-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224-pixel-proj.py --launcher pytorch --gpus $GPUS
-wait    
+# python3 -m torch.distributed.launch --nproc_per_node=$GPUS train.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-o2o-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224-pixel-proj.py --launcher pytorch --gpus $GPUS
+# wait
+python -m torch.distributed.launch --nproc_per_node=$GPUS  test.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-o2o-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224-pixel-proj.py --checkpoint /root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224-pixel-proj/best_mIoU_iter_1000.pth --launcher pytorch
+# wait
 # python3 -m torch.distributed.launch --nproc_per_node=$GPUS train.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-r2r-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224.py --launcher pytorch --gpus $GPUS
 
 # python -m torch.distributed.launch --nproc_per_node=$GPUS  test.py --config /root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-r2r-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224.py --checkpoint /root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-r2r-512-$scene_type-traversable-pixel-proj-cls-prefix-224x224/best_mIoU_iter_5000.pth --launcher pytorch

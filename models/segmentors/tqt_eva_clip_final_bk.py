@@ -346,37 +346,19 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             sne_feature = self.sne_backbone.extract_feats(sne)
             
         x_orig, score_map_all, text_emb, global_feat = self.after_extract_feat(x, sne_feature)
-
-
         score_map = score_map_all['img']
 
         if isinstance(x_orig, tuple):
             x_orig, sne_orig = x_orig
         else:
             sne_orig = None
-        
-        if self.use_sne and self.feature_phase == 'pixel' and self.feature_mode == 'proj':
-            x_orig = [self.img_sne_proj[i](torch.cat([x_orig[i], sne_orig[i]], dim=1)) for i in range(len(x_orig))]
-            visual_embeddings = x_orig[-2]
-            visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
-            text_embeddings = F.normalize(text_emb, dim=-1, p=2)
-            # 做一次初步的分割, 余弦相似度
-            score_map_img = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
-            score_map_all = {
-                'img_sne': score_map_img,
-            }
-            score_map_fusion = score_map_all['img_sne']
-            # identity是什么？
-            loss_score_map_fusion = self.identity_head.forward_train(
-                score_map_fusion/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-            losses.update(add_prefix(loss_score_map_fusion, 'img_sne_map'))
 
-        # if 'sne' in score_map_all:
-        #     score_map_sne = score_map_all['sne']
-        #     # identity是什么？
-        #     loss_score_map_sne = self.identity_head.forward_train(
-        #         score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-        #     losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
+        if 'sne' in score_map_all:
+            score_map_sne = score_map_all['sne']
+            # identity是什么？
+            loss_score_map_sne = self.identity_head.forward_train(
+                score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+            losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
         if self.prompt_cls:
@@ -474,11 +456,11 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             losses.update(add_prefix(loss_reg_v, 'reg.visual'))
 
         # vision-language regularization
-        # if self.identity_head is not None:
-        #     # identity是什么？
-        #     loss_score_map = self.identity_head.forward_train(
-        #         score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-        #     losses.update(add_prefix(loss_score_map, 'scr_map'))
+        if self.identity_head is not None:
+            # identity是什么？
+            loss_score_map = self.identity_head.forward_train(
+                score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
+            losses.update(add_prefix(loss_score_map, 'scr_map'))
 
         # decode head loss
         loss_decode = self.decode_head.forward_train(
