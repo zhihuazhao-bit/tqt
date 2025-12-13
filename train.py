@@ -34,7 +34,8 @@ def parse_args():
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
         # default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
-        default=r'/root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-r2r-512-all-traversable-pixel-proj-cls-prefix-224x224.py',
+        default=r'/root/tqdm/configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt.py',
+        # default="/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-224.py",
         help='train config file path')
     parser.add_argument(
         '--work-dir', 

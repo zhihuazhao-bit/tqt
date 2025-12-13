@@ -19,8 +19,8 @@ import models  # 导入自定义模型注册
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Detailed inference with TP/FP/FN visualization and metrics.')
-    parser.add_argument('--config', default="/root/tqdm/configs/tqt/tqt_eva_vit-b_1e-5_5k-o2o-512-all-traversable-pixel-proj-cls-prefix-224x224-pixel-proj.py", help='Path to the mmseg config file.')
-    parser.add_argument('--checkpoint', default="/root/tqdm/work_dirs/tqt_eva_vit-b_1e-5_5k-o2o-512-all-traversable-pixel-proj-cls-prefix-224x224-pixel-proj/best_mIoU_iter_1000.pth", help='Model checkpoint for inference.')
+    parser.add_argument('--config', default="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_L2.py", help='Path to the mmseg config file.')
+    parser.add_argument('--checkpoint', default="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt-l2/20251212_2322/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_l2/best_mIoU_iter_1000.pth", help='Model checkpoint for inference.')
     parser.add_argument('--output-dir', default='./work_dirs/detailed_inference', help='Directory to save detailed results.')
     parser.add_argument('--device', default='cuda:0', help='Device for inference, e.g. "cuda:0" or "cpu".')
     parser.add_argument('--limit', type=int, default=-1, help='Maximum number of frames to process (-1 for all).')
@@ -28,6 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--traversable-class', type=int, default=1, help='Class index for traversable regions. If None, auto-detect from class names.')
     parser.add_argument('--vis-scale', type=float, default=2, help='Scale factor for output visualization (default: 0.5).')
     parser.add_argument('--show-dir', default=None, help='Directory to save visualizations (overrides output-dir).')
+    parser.add_argument('--save-intermediate-dir', default='./attn', help='Directory to save intermediate tensors (score maps / OT pi).')
+    parser.add_argument('--save-attn', default=True, help='Save attention weight matrices returned by the model.')
     return parser.parse_args()
 
 
@@ -85,6 +87,34 @@ def main() -> None:
     args = parse_args()
     cfg = Config.fromfile(args.config)
 
+    def _enable_return_attn(cfg_obj):
+        """开启注意力返回：调整 test_cfg 与 decode_head 关键开关，匹配配置文件里的 return_attn 逻辑。"""
+        cfg_obj.model.test_cfg = cfg_obj.model.get('test_cfg', {})
+        cfg_obj.model.test_cfg['return_attn'] = True
+
+        # 同步 decode_head 的相关开关/类型
+        try:
+            dec = cfg_obj.model.decode_head
+            px = dec.pixel_decoder
+            px['return_attn_weights'] = True
+            # encoder 与 layer 类型切换到 Attn* 版本
+            if 'encoder' in px:
+                px.encoder['type'] = 'AttnDetrTransformerDecoder'
+                if 'transformerlayers' in px.encoder:
+                    px.encoder.transformerlayers['type'] = 'AttnDetrTransformerDecoderLayer'
+                    # cross-attn 用 AttnMultiheadAttention
+                    attn_cfgs = px.encoder.transformerlayers.get('attn_cfgs', None)
+                    if isinstance(attn_cfgs, list) and len(attn_cfgs) >= 2:
+                        # 第二个 usually cross-attn
+                        attn_cfgs[1]['type'] = 'AttnMultiheadAttention'
+        except Exception:
+            # 若结构不同则忽略，保持安全
+            pass
+
+    # 若需要返回注意力，必须在构建模型前修改配置以创建对应模块
+    if args.save_attn:
+        _enable_return_attn(cfg)
+
     # 导入 SimpleTokenizer (参考 legacy 代码)
     from models.backbones.utils import SimpleTokenizer
 
@@ -94,7 +124,7 @@ def main() -> None:
     sot_token = tokenizer.encoder["<|startoftext|>"]
     eot_token = tokenizer.encoder["<|endoftext|>"]
     
-    # 对 class_names 中的每个类别名称进行分词
+    # 对 class_names 中的每个类别名称进行分词，动态扩展文本上下文长度以容纳最长类别描述
     for i, class_name in enumerate(cfg.class_names):
         token = [sot_token] + tokenizer.encode(class_name) + [eot_token]
         tokens[i] = len(token) + 12
@@ -153,7 +183,7 @@ def main() -> None:
 
     # 自动检测可通行类别索引
     if args.traversable_class is None:
-        # 尝试从类别名称中自动检测
+        # 尝试从类别名称中自动检测，避免手动指定
         class_names = [str(c).lower() for c in model.module.CLASSES]
         traversable_keywords = ['traversable', 'vehicle-accessible', 'road', 'drivable']
         
@@ -179,11 +209,19 @@ def main() -> None:
     total = len(dataset)
     if args.limit >= 0:
         total = min(total, args.limit)
+    # 可选的进度条，方便长序列推理查看进度
     progress_bar = mmcv.ProgressBar(total) if args.progress else None
 
     # Global confusion matrix
     total_tp, total_fp, total_fn, total_tn = 0, 0, 0, 0
     processed = 0
+
+    # 中间结果保存根目录
+    debug_root = None
+    if args.save_intermediate_dir is not None:
+        config_name = os.path.basename(args.config).split('.')[0]
+        debug_root = Path(args.save_intermediate_dir) / config_name
+        debug_root.mkdir(parents=True, exist_ok=True)
 
     for data in data_loader:
         if 0 <= args.limit <= processed:
@@ -191,14 +229,38 @@ def main() -> None:
 
         # 直接传递 data，就像 test.py 中一样
         with torch.no_grad():
-            result = model(return_loss=False, **data)
+            # 依照 mmseg test 流程，直接调用模型的 forward_test
+            need_debug = args.save_intermediate_dir is not None
+            result = model(
+                return_loss=False,
+                return_debug=need_debug,
+                **data
+            )
 
         # 参考 test.py 的方式提取 img_metas
         img_metas = data['img_metas'][0].data[0]
         img_meta = img_metas[0]  # batch size = 1
 
+        # 解析模型输出（支持可选 attn/debug）
+        debug_payload = None
+        attn_matrix = None
+        if args.save_attn and (args.save_intermediate_dir is not None):
+            seg_pred, attn_matrix, debug_payload = result
+        elif args.save_attn:
+            seg_pred, attn_matrix = result
+        elif args.save_intermediate_dir is not None:
+            seg_pred, debug_payload = result
+        else:
+            seg_pred = result[0] if isinstance(result, (list, tuple)) else result
+
+        # 统一转为 numpy HxW（simple_test 返回 list[np.ndarray]）
+        if isinstance(seg_pred, list):
+            seg_pred = seg_pred[0]
+        if torch.is_tensor(seg_pred):
+            seg_pred = seg_pred.detach().cpu().numpy()
+
         # Get prediction and convert to binary
-        seg_pred = result[0].astype(np.uint8)
+        seg_pred = seg_pred.astype(np.uint8)
         pred_binary = (seg_pred == traversable_class).astype(np.uint8)
 
         # 构建完整的图像路径
@@ -347,12 +409,304 @@ def main() -> None:
         save_path = os.path.join(save_dir, f'detailed_{scene_name}_{base_name}.png')
         cv2.imwrite(str(save_path), img_cat_bgr)
 
+        # 保存中间结果 (score map / pi / attn)
+        if debug_root is not None:
+            sample_root = debug_root / scene_name
+            sample_root.mkdir(parents=True, exist_ok=True)
+
+            # 若没有 debug_payload，则保持旧约定：不构建 concat，可选仅保存 attn npy
+            if debug_payload is None:
+                if args.save_attn and attn_matrix is not None:
+                    attn_to_save = attn_matrix.detach().cpu() if torch.is_tensor(attn_matrix) else attn_matrix
+                    torch.save(attn_to_save, str(sample_root / f'{base_name}_attn.pt'))
+                # 直接跳过 concat 构建，保持原行为
+                continue
+
+            def _to_uint8_img(t: torch.Tensor) -> np.ndarray:
+                t = t.detach().cpu()
+                if t.ndim == 4:  # [B, C, H, W]
+                    t = t[0]
+                if t.ndim == 3 and t.shape[0] > 1:
+                    if t.shape[0] >= 3:
+                        t = t[:3]
+                    else:
+                        # t = t.mean(dim=0, keepdim=True)
+                        t = t[1]
+                if t.ndim == 3 and t.shape[0] == 1:
+                    t = t.squeeze(0)
+                t_min, t_max = t.min(), t.max()
+                if float(t_max - t_min) < 1e-8:
+                    arr = (t * 0).byte().numpy()
+                else:
+                    arr = ((t - t_min) / (t_max - t_min) * 255.0).clamp(0, 255).byte().numpy()
+                if arr.ndim == 2:
+                    arr = cv2.applyColorMap(arr, cv2.COLORMAP_JET)
+                else:
+                    arr = arr.transpose(1, 2, 0)
+                return arr
+
+            def _argmax_to_bw_trav(t: torch.Tensor, trav_idx: int) -> Optional[np.ndarray]:
+                t = t.detach().cpu()
+                if t.ndim == 4:
+                    t = t[0]
+                if t.ndim != 3:
+                    return None
+                label = t.argmax(dim=0).byte().numpy()
+                mask = (label == trav_idx).astype(np.uint8) * 255
+                return np.stack([mask] * 3, axis=-1)
+
+            def _extract_attn(attn_raw):
+                """提取注意力权重和可选的 spatial_shapes。
+
+                返回 (tensor, spatial_shapes or None)。
+                支持:
+                  - tensor / np.ndarray
+                  - list/tuple: 取最后一个元素递归
+                  - dict: 支持格式
+                        {'rgb': {'attn_weights': ..., 'spatial_shapes': ...}}
+                        {'attn_weights': ..., 'spatial_shapes': ...}
+                        {'attn': ...}
+                        以及一般的键 'attn'/'attn_weights'/'weights'
+                """
+                if attn_raw is None:
+                    return None, None
+                # tensor
+                if torch.is_tensor(attn_raw):
+                    return attn_raw, None
+                if isinstance(attn_raw, np.ndarray):
+                    return torch.from_numpy(attn_raw), None
+                # list/tuple: 取最后一个
+                if isinstance(attn_raw, (list, tuple)) and len(attn_raw) > 0:
+                    return _extract_attn(attn_raw[0])
+                # dict: 优先解析 rgb/img 分支
+                if isinstance(attn_raw, dict):
+                    # rgb/img 子字典
+                    for branch_key in ['rgb', 'img', 'image']:
+                        if branch_key in attn_raw and isinstance(attn_raw[branch_key], dict):
+                            sub = attn_raw[branch_key]
+                            weights = sub.get('attn_weights', sub.get('attn', sub.get('weights')))
+                            spatial_shapes = sub.get('spatial_shapes')
+                            if weights is not None:
+                                w_tensor, _ = _extract_attn(weights)
+                                return w_tensor, spatial_shapes
+                    # 直接取常用键
+                    for key in ['attn_weights', 'attn', 'weights']:
+                        if key in attn_raw:
+                            w_tensor, _ = _extract_attn(attn_raw[key])
+                            spatial_shapes = attn_raw.get('spatial_shapes')
+                            return w_tensor, spatial_shapes
+                return None, None
+
+            def _attn_to_vis(attn: torch.Tensor, spatial_shapes=None) -> Optional[list[tuple[list[np.ndarray], str]]]:
+                """
+                将注意力矩阵可视化为若干子图列表。
+
+                支持形状:
+                  - [L, H, Q, K]
+                  - [H, Q, K]
+                  - [Q, K]
+
+                视觉 Query 数常见为 1029 (=28x28+14x14+7x7)；文本 Key 为 2 类。
+                这里按每个文本 token 生成一张拼接的分辨率金字塔热力图，便于观察不同尺度的响应。
+                """
+                t = attn.detach().cpu().float()
+                if t.ndim == 4:  # [L, H, Q, K]
+                    t = t[-1]   # 取最后一层
+                if t.ndim == 3:  # [H, Q, K]
+                    t = t.mean(dim=0)  # 按 head 平均 -> [Q, K]
+                if t.ndim != 2:
+                    return None
+
+                q_len, k_len = t.shape
+                # 优先使用 spatial_shapes（若模型返回）拆分 Query
+                if spatial_shapes is not None:
+                    if torch.is_tensor(spatial_shapes):
+                        spatial_shapes = spatial_shapes.cpu().numpy()
+                    splits = [(int(h), int(w)) for h, w in spatial_shapes]
+                else:
+                    splits = [(28, 28), (14, 14), (7, 7)]
+                split_sizes = [h * w for h, w in splits]
+                if sum(split_sizes) != q_len:
+                    # 若长度不匹配，退化为单行可视化
+                    vis_list = []
+                    for cls in range(min(k_len, 4)):
+                        vec = t[:, cls]
+                        vmin, vmax = float(vec.min()), float(vec.max())
+                        if abs(vmax - vmin) < 1e-8:
+                            norm = np.zeros((1, q_len), dtype=np.uint8)
+                        else:
+                            norm = ((vec - vmin) / (vmax - vmin) * 255.0).clamp(0, 255).byte().unsqueeze(0).numpy()
+                        jet = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
+                        # jet = cv2.cvtColor(jet, cv2.COLOR_BGR2RGB)
+                        vis_list.append((jet, f'attn_cls{cls}'))
+                    return vis_list if vis_list else None
+
+                # 按尺度切片并还原空间排列；仅切分，不在此处拼接，留给外层控制缩放与拼接
+                offsets = np.cumsum([0] + split_sizes)
+                vis_list: list[tuple[list[np.ndarray], str]] = []
+                for cls in range(min(k_len, 4)):  # 最多显示前4个 key
+                    tiles = []
+                    for (h, w), start, end in zip(splits, offsets[:-1], offsets[1:]):
+                        patch = t[start:end, cls].reshape(h, w)
+                        vmin, vmax = float(patch.min()), float(patch.max())
+                        if abs(vmax - vmin) < 1e-8:
+                            norm = np.zeros((h, w), dtype=np.uint8)
+                        else:
+                            norm = ((patch - vmin) / (vmax - vmin) * 255.0).clamp(0, 255).byte().numpy()
+                        jet = cv2.applyColorMap(norm, cv2.COLORMAP_JET)
+                        # jet = cv2.cvtColor(jet, cv2.COLOR_BGR2RGB)
+                        tiles.append(jet)
+                    vis_list.append((tiles, f'attn_cls{cls}'))
+
+                return vis_list if vis_list else None
+
+            def _attn_argmax_mask(attn: torch.Tensor, spatial_shapes=None, target_cls: int = 0) -> Optional[list[np.ndarray]]:
+                """Generate per-scale masks (no concat) by argmax over attention keys."""
+                t = attn.detach().cpu().float()
+                if t.ndim == 4:  # [L, H, Q, K]
+                    t = t[-1]
+                if t.ndim == 3:  # [H, Q, K]
+                    t = t.mean(dim=0)
+                if t.ndim != 2:
+                    return None
+
+                q_len, k_len = t.shape
+                if k_len == 0:
+                    return None
+
+                if spatial_shapes is not None:
+                    if torch.is_tensor(spatial_shapes):
+                        spatial_shapes = spatial_shapes.cpu().numpy()
+                    splits = [(int(h), int(w)) for h, w in spatial_shapes]
+                else:
+                    splits = [(28, 28), (14, 14), (7, 7)]
+
+                split_sizes = [h * w for h, w in splits]
+                if sum(split_sizes) != q_len:
+                    return None
+
+                offsets = np.cumsum([0] + split_sizes)
+                tiles: list[np.ndarray] = []
+                for (h, w), start, end in zip(splits, offsets[:-1], offsets[1:]):
+                    patch = t[start:end, :].reshape(h, w, k_len)
+                    argmax = patch.argmax(dim=2)
+                    mask = (argmax == target_cls).byte().numpy() * 255
+                    mask = np.stack([mask] * 3, axis=-1)
+                    tiles.append(mask)
+
+                if len(tiles) == 0:
+                    return None
+
+                return tiles
+
+            def _add_title_band(img: np.ndarray, title: str, band_h: int = 28) -> np.ndarray:
+                if img.ndim == 2:
+                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                band = np.zeros((band_h, img.shape[1], 3), dtype=np.uint8)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                cv2.putText(band, title, (5, band_h - 8), font, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+                return np.concatenate((band, img), axis=0)
+
+            def _resize_to_target(img: np.ndarray, size=(224, 224)) -> np.ndarray:
+                if img.ndim == 2:
+                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                return cv2.resize(img, (size[1], size[0]), interpolation=cv2.INTER_LINEAR)
+
+            # 统一可视化尺寸：固定 224x224 便于 debug，对齐所有可视化
+            vis_target_shape = (224, 224)
+
+            # 基础列：RGB / 预测 / GT
+            top_row: list[tuple[np.ndarray, str]] = []
+            bottom_row: list[tuple[np.ndarray, str]] = []
+
+            top_row.append((cv2.cvtColor(_resize_to_target(rgb_image_ori, size=vis_target_shape), cv2.COLOR_RGB2BGR), 'RGB'))
+            pred_prob_vis = cv2.applyColorMap((pred_binary * 255).astype(np.uint8), cv2.COLORMAP_JET)
+            pred_prob_vis = cv2.cvtColor(pred_prob_vis, cv2.COLOR_BGR2RGB)
+            top_row.append((_resize_to_target(pred_prob_vis, size=vis_target_shape), 'pred_mask_prob'))
+
+            gt_mask_bw = (gt_binary * 255).astype(np.uint8) if gt_binary is not None else np.zeros_like(pred_binary)
+            gt_mask_vis = np.stack([gt_mask_bw] * 3, axis=-1)
+            bottom_row.append((_resize_to_target(gt_mask_vis, size=vis_target_shape), 'gt_mask'))
+
+            pred_bw = np.stack([(pred_binary * 255).astype(np.uint8)] * 3, axis=-1)
+            bottom_row.append((_resize_to_target(pred_bw, size=vis_target_shape), 'pred_mask'))
+
+            # 追加 score map/OT 结果
+            if 'score_map_img' in debug_payload:
+                img_vis = _resize_to_target(_to_uint8_img(debug_payload['score_map_img']), size=vis_target_shape)
+                top_row.append((img_vis, 'score_map_img'))
+                arg_vis = _argmax_to_bw_trav(debug_payload['score_map_img'], traversable_class)
+                if arg_vis is not None:
+                    bottom_row.append((_resize_to_target(arg_vis, size=vis_target_shape), 'score_map_img_argmax'))
+            if 'score_map_sne' in debug_payload:
+                sne_vis = _resize_to_target(_to_uint8_img(debug_payload['score_map_sne']), size=vis_target_shape)
+                top_row.append((sne_vis, 'score_map_sne'))
+                arg_vis = _argmax_to_bw_trav(debug_payload['score_map_sne'], traversable_class)
+                if arg_vis is not None:
+                    bottom_row.append((_resize_to_target(arg_vis, size=vis_target_shape), 'score_map_sne_argmax'))
+
+            for idx, pi_img in enumerate(debug_payload.get('pi_img_levels', [])):
+                pi_vis = _resize_to_target(_to_uint8_img(pi_img), size=vis_target_shape)
+                top_row.append((pi_vis, f'pi_img_lvl{idx}'))
+                arg_vis = _argmax_to_bw_trav(pi_img, traversable_class)
+                if arg_vis is not None:
+                    bottom_row.append((_resize_to_target(arg_vis, size=vis_target_shape), f'pi_img_lvl{idx}_argmax'))
+            for idx, pi_sne in enumerate(debug_payload.get('pi_sne_levels', [])):
+                pi_vis = _resize_to_target(_to_uint8_img(pi_sne), size=vis_target_shape)
+                top_row.append((pi_vis, f'pi_sne_lvl{idx}'))
+                arg_vis = _argmax_to_bw_trav(pi_sne, traversable_class)
+                if arg_vis is not None:
+                    bottom_row.append((_resize_to_target(arg_vis, size=vis_target_shape), f'pi_sne_lvl{idx}_argmax'))
+
+            # 注意力可视化：仅保留目标类别的权重图（如可通行类别），放在首行
+            if args.save_attn:
+                attn_tensor, attn_shapes = _extract_attn(attn_matrix)
+                if attn_tensor is not None:
+                    target_shape = vis_target_shape
+                    attn_vis_list = _attn_to_vis(attn_tensor, spatial_shapes=attn_shapes)
+                    if attn_vis_list is not None:
+                        target_title = f'attn_cls{traversable_class}'
+                        filtered = [(tiles, title) for tiles, title in attn_vis_list if title == target_title]
+                        for tiles, title in filtered:
+                            # 外层统一缩放并横向拼接
+                            resized_tiles = [_resize_to_target(tile, size=target_shape) for tile in tiles]
+                            concat_tile = np.concatenate(resized_tiles, axis=1)
+                            top_row.insert(0, (concat_tile, title))
+
+                    attn_argmax_tiles = _attn_argmax_mask(attn_tensor, spatial_shapes=attn_shapes, target_cls=traversable_class)
+                    if attn_argmax_tiles is not None:
+                        resized_tiles = [_resize_to_target(tile, size=target_shape) for tile in attn_argmax_tiles]
+                        concat_mask = np.concatenate(resized_tiles, axis=1)
+                        bottom_row.insert(0, (concat_mask, 'attn_argmax_mask'))
+
+            if len(top_row) > 0:
+                top_titled = [_add_title_band(im, title) for im, title in top_row]
+                top_concat = np.concatenate([
+                    # cv2.cvtColor(im, cv2.COLOR_RGB2BGR) if im.shape[2] == 3 else im for im in top_titled
+                    im for im in top_titled
+                ], axis=1)
+
+                if len(bottom_row) > 0:
+                    bottom_titled = [_add_title_band(im, title) for im, title in bottom_row]
+                    bottom_concat = np.concatenate([
+                        # cv2.cvtColor(im, cv2.COLOR_RGB2BGR) if im.shape[2] == 3 else im for im in bottom_titled
+                        im for im in bottom_titled
+                    ], axis=1)
+                    concat = np.concatenate((top_concat, bottom_concat), axis=0)
+                else:
+                    concat = top_concat
+
+                cv2.imwrite(str(sample_root / f'{base_name}_debug_concat.png'), concat)
+
+            if args.save_attn and attn_matrix is not None:
+                attn_to_save = attn_matrix.detach().cpu() if torch.is_tensor(attn_matrix) else attn_matrix
+                torch.save(attn_to_save, str(sample_root / f'{base_name}_attn.pt'))
+
         processed += 1
         if progress_bar is not None:
             progress_bar.update(1)
 
-    if progress_bar is not None:
-        progress_bar.bar.finish()
+    # mmcv.ProgressBar closes itself when total is reached; no extra finish() call needed
 
     # Compute and print overall metrics
     overall_metrics = compute_metrics(total_tp, total_fp, total_fn, total_tn)

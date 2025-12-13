@@ -1,87 +1,237 @@
-import os
+"""
+TQT-EVA-CLIP 分割模型
+
+基于 EVA-CLIP 的可通行区域语义分割模型，支持消融实验配置:
+
+消融实验配置说明:
+================
+| 配置项              | 说明                                          | 默认值     |
+|---------------------|----------------------------------------------|------------|
+| use_sne             | 是否使用 Surface Normal 双模态融合            | False      |
+| sne_fusion_stage    | SNE融合阶段: 'backbone'(segmentor中) / 'pixel'(head中) | 'backbone' |
+| sne_fusion_mode     | SNE融合方式: 'proj'/'add'/'concat'/'cross_attn'/'ot' | 'proj'     |
+| use_ot_align        | 是否使用最优传输进行 img/sne 与 text 的对齐    | False      |
+| prompt_cls          | 是否使用动态场景感知提示 (天气/光照/路面)       | False      |
+| use_context_decoder | 是否使用 context decoder 增强 text embedding   | True       |
+| use_learnable_prompt| 是否使用可学习的 prompt prefix (CoOp)          | True       |
+
+融合阶段说明:
+=============
+- backbone: 在 segmentor 中完成 RGB-SNE 融合，融合后的特征传给 head (sne_feature=None)
+- pixel: 在 head 中使用独立 pixel_decoder 并行处理 RGB 和 SNE 后融合
+
+消融实验组合示例:
+================
+- Baseline (tqdm):             use_sne=False
+- +SNE (backbone proj):        use_sne=True, sne_fusion_stage='backbone', sne_fusion_mode='proj'
+- +SNE (backbone cross_attn):  use_sne=True, sne_fusion_stage='backbone', sne_fusion_mode='cross_attn'
+- +SNE (backbone OT):          use_sne=True, sne_fusion_stage='backbone', sne_fusion_mode='ot'
+- +SNE (pixel proj):           use_sne=True, sne_fusion_stage='pixel', sne_fusion_mode='proj'
+- +SNE (pixel cross_attn):     use_sne=True, sne_fusion_stage='pixel', sne_fusion_mode='cross_attn'
+- +PromptCls:                  prompt_cls=True
+- -ContextDecoder:             use_context_decoder=False
+- -LearnablePrompt:            use_learnable_prompt=False
+"""
+
 import copy
-import math
+import json
+import os
+
 import swanlab
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms as T
-import torchvision.utils as vutils
 
 from mmseg.ops import resize
 from mmseg.core import add_prefix
-from mmseg.models import builder
 from mmseg.models.builder import SEGMENTORS
-from mmseg.models.segmentors.base import BaseSegmentor
-from models.segmentors import tqdm_EVA_CLIP
+from models.segmentors import tqdm_EVA_CLIP, OTFeatureAligner
 
-from ..backbones.eva_clip import get_backbone
 from ..backbones.utils import tokenize
 
+
+def maybe_pad(input_feature, height=None, width=None, data_format="channels_last"):
+    """Pad spatial dims to even sizes for pixel shuffle/unshuffle paths."""
+    if data_format == "channels_first":
+        input_feature = input_feature.permute(0, 2, 3, 1).contiguous()
+
+    if height is None or width is None:
+        height, width = input_feature.shape[1:-1]
+
+    if (height % 2 == 1) or (width % 2 == 1):
+        pad_values = (0, 0, 0, width % 2, 0, height % 2)
+        input_feature = F.pad(input_feature, pad_values)
+
+    if data_format == "channels_first":
+        input_feature = input_feature.permute(0, 3, 1, 2).contiguous()
+
+    return input_feature
+
+
+def pixel_shuffle(x, scale_factor=0.5, data_format="channels_last"):
+    """Bidirectional pixel shuffle for up/down sampling in NHWC/NCHW."""
+    if data_format == "channels_first":
+        x = x.permute(0, 2, 3, 1).contiguous()
+
+    b, h, w, c = x.size()
+    scale = float(scale_factor)
+    new_w = int(round(w * scale))
+    new_h = int(round(h * scale))
+    # intermediate channel for first reshape; safe for both up/down paths
+    mid_c = int(round(c / scale))
+    out_c = int(round(c / (scale * scale)))
+
+    x = x.reshape(b, h, new_w, mid_c)
+    x = x.permute(0, 2, 1, 3).contiguous()
+    x = x.view(b, new_w, new_h, out_c)
+    x = x.permute(0, 2, 1, 3).contiguous()
+
+    if data_format == "channels_first":
+        x = x.permute(0, 3, 1, 2).contiguous()
+
+    return x
+
+
+class PixelSamplingBlock(nn.Module):
+    """PixelShuffle/Unshuffle based up/down sampling block."""
+
+    def __init__(self, dim, scale_factor, norm_layer=nn.SyncBatchNorm, act_layer=nn.GELU):
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.is_upsample = scale_factor > 1
+
+        if self.is_upsample:
+            expand_ratio = int(scale_factor ** 2)
+            self.proj = nn.Conv2d(dim, dim * expand_ratio, kernel_size=1)
+        else:
+            down_ratio = int((1 / scale_factor) ** 2)
+            self.proj = nn.Conv2d(dim * down_ratio, dim, kernel_size=1)
+
+        self.norm = norm_layer(dim)
+        self.act = act_layer()
+
+    def forward(self, x):
+        x = maybe_pad(x, data_format="channels_first")
+
+        if self.is_upsample:
+            x = self.proj(x)
+            x = pixel_shuffle(x, scale_factor=self.scale_factor, data_format="channels_first")
+        else:
+            x = pixel_shuffle(x, scale_factor=self.scale_factor, data_format="channels_first")
+            x = self.proj(x)
+
+        x = self.norm(x)
+        x = self.act(x)
+        return x
+
+
 class BidirectionalCrossAttention(nn.Module):
+    """双向交叉注意力模块，用于两个特征序列的相互增强。"""
+
     def __init__(self, dim, num_heads=8):
         super().__init__()
         self.cross_attn_1to2 = nn.MultiheadAttention(dim, num_heads, batch_first=True)
         self.cross_attn_2to1 = nn.MultiheadAttention(dim, num_heads, batch_first=True)
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
-        
+
     def forward(self, x1, x2):
-        """
-        x1, x2: (B, 196, F)
-        """
+        """双向交叉注意力前向传播。"""
         # x1 用 x2 增强
-        attn_out1, attn_weights_1to2 = self.cross_attn_1to2(
-            query=x1,      # (B, 196, F)
-            key=x2,        # (B, 196, F)
-            value=x2       # (B, 196, F)
-        )
+        attn_out1, attn_weights_1to2 = self.cross_attn_1to2(query=x1, key=x2, value=x2)
         x1 = self.norm1(x1 + attn_out1)
-        
+
         # x2 用 x1 增强
-        attn_out2, attn_weights_2to1 = self.cross_attn_2to1(
-            query=x2,
-            key=x1,
-            value=x1
-        )
+        attn_out2, attn_weights_2to1 = self.cross_attn_2to1(query=x2, key=x1, value=x1)
         x2 = self.norm2(x2 + attn_out2)
-        
+
         return x1, x2, attn_weights_1to2, attn_weights_2to1
+
 
 @SEGMENTORS.register_module()
 class tqt_EVA_CLIP(tqdm_EVA_CLIP):
+    """TQT-EVA-CLIP: 支持消融实验的可通行区域分割模型。
+    
+    消融实验配置:
+        - use_sne (bool): 启用 Surface Normal 双模态融合，默认 False
+        - sne_fusion_stage (str): 融合阶段，'backbone'(segmentor中)/'pixel'(head中)，默认 'backbone'
+        - sne_fusion_mode (str): 融合方式，'proj'/'add'/'cross_attn'/'ot'，默认 'proj'
+        - use_ot_align (bool): 启用最优传输对齐 (img/sne -> text)，默认 False
+        - prompt_cls (bool): 启用动态场景感知提示，默认 False
+        - use_context_decoder (bool): 启用 context decoder 增强 text，默认 True
+        - use_learnable_prompt (bool): 启用可学习 prompt prefix (CoOp)，默认 True
+    
+    消融实验组合示例:
+        1. Baseline (与 tqdm 一致):
+           use_sne=False, prompt_cls=False, use_context_decoder=True, use_learnable_prompt=True
+        
+        2. +SNE (简单融合):
+           use_sne=True, sne_fusion_mode='simple'
+        
+        3. +SNE (双向交叉注意力):
+           use_sne=True, sne_fusion_mode='cross_attn'
+        
+        4. +SNE (最优传输融合):
+           use_sne=True, sne_fusion_mode='ot'
+        
+        5. +SNE + 全局OT对齐:
+           use_sne=True, sne_fusion_mode='ot', use_ot_align=True
+        
+        6. +动态场景提示:
+           prompt_cls=True
+        
+        7. -Context Decoder:
+           use_context_decoder=False
+        
+        8. -可学习Prompt:
+           use_learnable_prompt=False
+    """
 
-    def __init__(self,
-                 eva_clip,
-                 decode_head,
-                 class_names,
-                 context_length,
-                 context_decoder=None,
-                 token_embed_dim=512, 
-                 text_dim=512,
-                 neck=None,
-                 identity_head=None,
-                 visual_reg=True,
-                 textual_reg=True,
-                 train_cfg=None,
-                 test_cfg=None,
-                 init_cfg=None,
-                 use_sne=True,
-                 prompt_cls=False,
-                 use_cross_attn=True,
-                 feature_phase='pixel',
-                 feature_mode='proj',
-                 use_context=True,
-                 **args):
+    # 场景属性类别定义
+    WEATHER_CLASSES = ['sunny', 'snowy', 'foggy', 'rainy']
+    ROAD_CLASSES = ['paved road', 'unpaved road']
+    LIGHT_CLASSES = ['daytime', 'dusk', 'nighttime']
 
-        # 1. 调用父类的 __init__ 方法，并传递所有它需要的参数
-        #    让父类完成所有基础组件的初始化工作
-        super(tqt_EVA_CLIP, self).__init__(
+    def __init__(
+        self,
+        eva_clip,
+        decode_head,
+        class_names,
+        context_length,
+        context_decoder=None,
+        token_embed_dim=512,
+        text_dim=512,
+        visual_dim=768,                   # 视觉特征维度 (由 model_name 决定)
+        neck=None,
+        identity_head=None,
+        visual_reg=True,
+        textual_reg=True,
+        train_cfg=None,
+        test_cfg=None,
+        init_cfg=None,
+        patch_fpn=False,                 # 额外开关：使用补丁式 FPN 重建（patch expand/merge）
+        patch_fpn_xsam=False,            # 额外开关：使用 PixelSamplingBlock 版补丁式 FPN
+        supervise_ot_pi=False,           # 额外开关：对 OT 传输计划 pi 进行分割掩码深监督
+        # ====== 消融实验配置 ======
+        use_sne=False,                    # 1. 是否使用 SNE 双模态
+        sne_fusion_stage='backbone',      # 2. 融合阶段: 'backbone' / 'pixel'
+        sne_fusion_mode='proj',           # 3. 融合方式: 'proj' / 'add' / 'cross_attn' / 'ot'
+        use_ot_align=False,               # 4. 是否使用 OT 对齐 (img/sne -> text)
+        ot_use_score_prior=True,          # 5. OT 是否使用预测图来分配文本分布权重
+        ot_cost_type='cos',               # 6. OT 成本矩阵计算方式: 'cos' 或 'l2'
+        ot_fuse_output=True,              # 7. OTFeatureAligner 输出是否做残差融合
+        prompt_cls=False,                 # 6. 是否使用动态场景感知提示
+        use_context_decoder=True,         # 6. 是否使用 context decoder
+        use_learnable_prompt=True,        # 7. 是否使用可学习 prompt prefix
+        **args
+    ):
+        # 调用父类初始化
+        super().__init__(
             eva_clip=eva_clip,
             decode_head=decode_head,
             class_names=class_names,
             context_length=context_length,
-            context_decoder=context_decoder,
+            context_decoder=context_decoder if use_context_decoder else None,
             token_embed_dim=token_embed_dim,
             text_dim=text_dim,
             neck=neck,
@@ -94,481 +244,1129 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             **args
         )
 
-        # 2. 在父类初始化完成后，只执行子类自己新增的逻辑
+        # ====== 保存消融实验配置 ======
         self.use_sne = use_sne
+        self.sne_fusion_stage = sne_fusion_stage
+        self.sne_fusion_mode = sne_fusion_mode
+        self.use_ot_align = use_ot_align
+        self.ot_use_score_prior = ot_use_score_prior
+        self.ot_cost_type = ot_cost_type
+        self.ot_fuse_output = ot_fuse_output
         self.prompt_cls = prompt_cls
-        self.use_cross_attn = use_cross_attn
-        self.use_context = use_context
-        assert feature_phase in ['pixel', 'context'], "feature_phase must be 'pixel' or 'context'"
-        assert feature_mode in ['proj', 'add', 'concat'], "feature_mode must be 'proj' or 'add'"
-        self.feature_phase = feature_phase
-        self.feature_mode = feature_mode
-        print(f"use_sne: {self.use_sne}, prompt_cls: {self.prompt_cls}, feature_phase: {self.feature_phase}, feature_mode: {self.feature_mode}")
-        with open('/root/tqdm/dataset/ORFD/english_scene_dict.json', 'r') as f:
-                import json
-                self.scene2info = json.load(f)
-        if self.use_sne:
-            # 保存示例图片的标志位
-            self.save_img_sne_sum = 0
-            self.save_img_sne_sum_val = 0
-            # self.backbone 是在父类中被初始化的，这里可以直接使用
-            self.context_decoder_sne = copy.deepcopy(self.context_decoder)
-            in_channels = 512 * 2 
-            out_channels = 512
-            if self.use_cross_attn:
-                self.img_sne_attn = nn.ModuleList(
-                    [BidirectionalCrossAttention(768) for _ in range(4)]
-                )
-            if self.feature_mode == 'proj':
-                self.img_sne_proj = nn.ModuleList(
-                    [nn.Conv2d(in_channels, out_channels, kernel_size=1) for _ in range(4)]
-                )
-            self.sne_backbone = copy.deepcopy(self.backbone)
-            self.gamma_sne = nn.Parameter(torch.ones(text_dim) * 1e-4)
-            nn.init.trunc_normal_(self.gamma_sne)
+        self.use_context_decoder = use_context_decoder
+        self.use_learnable_prompt = use_learnable_prompt
+        self.visual_dim = visual_dim
+        self.text_dim = text_dim
+        self.patch_fpn_xsam = patch_fpn_xsam
+        self.patch_fpn = patch_fpn or patch_fpn_xsam
+        self.supervise_ot_pi = supervise_ot_pi
 
-        self.contexts_traversable = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-        self.contexts_notraversable = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
+        assert sne_fusion_stage in ['backbone', 'pixel'], \
+            "sne_fusion_stage must be 'backbone' or 'pixel'"
+        assert sne_fusion_mode in ['proj', 'add', 'concat', 'cross_attn', 'ot'], \
+            "sne_fusion_mode must be 'proj', 'add', 'concat', 'cross_attn' or 'ot'"
 
-        nn.init.trunc_normal_(self.contexts_traversable)
-        nn.init.trunc_normal_(self.contexts_notraversable)
+        # 打印消融实验配置
+        self._print_ablation_config()
 
+        # 加载场景信息字典 (用于 prompt_cls)
         if self.prompt_cls:
-            self.weather_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-            self.light_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-            self.road_prompt = nn.Parameter(torch.randn(1, self.prompt_num, token_embed_dim))
-            # --- 新增：保存类别名称列表 ---
-            self.weather_class_names = ['sunny', 'snowy', 'foggy', 'rainy']
-            self.road_class_names = ['paved road', 'unpaved road']
-            self.light_class_names = ['daytime', 'dusk', 'nighttime']
-            # -----------------------------
+            scene_dict_path = '/root/tqdm/dataset/ORFD/english_scene_dict.json'
+            with open(scene_dict_path, 'r') as f:
+                self.scene2info = json.load(f)
 
-            # --- 修正变量名并使用上面定义的列表 ---
-            self.weather_texts = torch.cat([tokenize(c, context_length=context_length) for c in self.weather_class_names]).to('cuda')
+        # ====== 初始化计数器变量 (与 SNE 解耦) ======
+        self.save_img_sne_sum = 0
+        self.save_img_sne_sum_val = 0
 
-            self.weather_t0 = torch.cat([tokenize(
-                texts=f"A photo of {c}", context_length=self.text_encoder.context_length)  for c in self.weather_class_names]).to('cuda')
-            self.weather_t0 = F.normalize(self.text_encoder(self.weather_t0, context=None), dim=-1, p=2)
-            self.weather_I = torch.arange(len(self.weather_class_names), device='cuda')
+        # ====== 根据配置初始化模块 ======
+        if self.use_sne:
+            self._init_sne_modules(visual_dim, text_dim)
+        if self.prompt_cls:
+            self._init_prompt_modules(token_embed_dim, context_length)
 
-            self.road_texts = torch.cat([tokenize(c, context_length=context_length) for c in self.road_class_names]).to('cuda')
+        # 可选：基于中尺度特征用 patch expand/merge 重建金字塔，保持与默认 FPN 兼容
+        if self.patch_fpn:
+            self.patch_expand1 = nn.Sequential(
+                nn.ConvTranspose2d(visual_dim, visual_dim, kernel_size=2, stride=2),
+                nn.SyncBatchNorm(visual_dim),
+                nn.GELU(),
+            )
+            self.patch_expand2 = nn.Sequential(
+                nn.ConvTranspose2d(visual_dim, visual_dim, kernel_size=2, stride=2),
+                nn.SyncBatchNorm(visual_dim),
+                nn.GELU(),
+            )
+            self.patch_merge1 = nn.Sequential(
+                nn.Conv2d(visual_dim, visual_dim, kernel_size=3, stride=2, padding=1),
+                nn.SyncBatchNorm(visual_dim),
+                nn.GELU(),
+            )
+        elif self.patch_fpn_xsam:
+            self.patch_expand1 = PixelSamplingBlock(visual_dim, scale_factor=2)
+            self.patch_expand2 = PixelSamplingBlock(visual_dim, scale_factor=2)
+            self.patch_merge1 = PixelSamplingBlock(visual_dim, scale_factor=0.5)
 
-            self.road_t0 = torch.cat([tokenize(
-                texts=f"A photo of {c}", context_length=self.text_encoder.context_length)  for c in self.road_class_names]).to('cuda')
-            
-            self.road_t0 = F.normalize(self.text_encoder(self.road_t0, context=None), dim=-1, p=2)
-            self.road_I = torch.arange(len(self.road_class_names), device='cuda')
-
-            self.light_texts = torch.cat([tokenize(c, context_length=context_length) for c in self.light_class_names]).to('cuda')
-
-            self.light_t0 = torch.cat([tokenize(
-                texts=f"A photo of {c}", context_length=self.text_encoder.context_length)  for c in self.light_class_names]).to('cuda')
-            self.light_t0 = F.normalize(self.text_encoder(self.light_t0, context=None), dim=-1, p=2)
-            self.light_I = torch.arange(len(self.light_class_names), device='cuda')
-
-        if self.use_context is False:
+        # 如果不使用 context_decoder，置为 None
+        if not self.use_context_decoder:
             self.context_decoder = None
 
-    def extract_feat(self, img):
+    def _print_ablation_config(self):
+        """打印消融实验配置信息。"""
+        config_str = (
+            f"\n{'='*60}\n"
+            f"[TQT Ablation Config]\n"
+            f"{'='*60}\n"
+            f"  use_sne:              {self.use_sne}\n"
+            f"  sne_fusion_stage:     {self.sne_fusion_stage}\n"
+            f"  sne_fusion_mode:      {self.sne_fusion_mode}\n"
+            f"  use_ot_align:         {self.use_ot_align}\n"
+            f"  ot_cost_type:         {self.ot_cost_type}\n"
+            f"  ot_fuse_output:       {self.ot_fuse_output}\n"
+            f"  prompt_cls:           {self.prompt_cls}\n"
+            f"  use_context_decoder:  {self.use_context_decoder}\n"
+            f"  use_learnable_prompt: {self.use_learnable_prompt}\n"
+            f"  supervise_ot_pi:      {self.supervise_ot_pi}\n"
+            f"{'='*60}"
+        )
+        print(config_str)
+
+    def _init_sne_modules(self, visual_dim, text_dim):
+        """初始化 SNE 相关模块。"""
+        # SNE backbone (共享权重初始化)
+        self.sne_backbone = copy.deepcopy(self.backbone)
+
+        # SNE 分支的 context decoder (如果启用)
+        if self.use_context_decoder and self.context_decoder is not None:
+            self.context_decoder_sne = copy.deepcopy(self.context_decoder)
+            self.gamma_sne = nn.Parameter(torch.ones(text_dim) * 1e-4)
+            nn.init.trunc_normal_(self.gamma_sne)
+        else:
+            self.context_decoder_sne = None
+
+        # ====== 只在 backbone 阶段融合时初始化融合模块 ======
+        # pixel 阶段的融合模块在 tqtHead 中初始化
+        if self.sne_fusion_stage == 'backbone':
+            if self.sne_fusion_mode == 'cross_attn':
+                # 双向交叉注意力
+                self.cross_attn_modules = nn.ModuleList([
+                    BidirectionalCrossAttention(visual_dim) for _ in range(4)
+                ])
+                # 融合投影层
+                self.img_sne_proj = nn.ModuleList([
+                    nn.Conv2d(visual_dim * 2, visual_dim, kernel_size=1) for _ in range(4)
+                ])
+
+            elif self.sne_fusion_mode == 'ot':
+                # 最优传输对齐模块
+                self.img_attn = nn.ModuleList([
+                    OTFeatureAligner(
+                        visual_dim,
+                        use_score_prior=self.ot_use_score_prior,
+                        fuse_output=self.ot_fuse_output,
+                        cost_type=self.ot_cost_type,
+                    )
+                    for _ in range(4)
+                ])
+                self.sne_attn = nn.ModuleList([
+                    OTFeatureAligner(
+                        visual_dim,
+                        use_score_prior=self.ot_use_score_prior,
+                        fuse_output=self.ot_fuse_output,
+                        cost_type=self.ot_cost_type,
+                    )
+                    for _ in range(4)
+                ])
+                self.text_proj = nn.Linear(text_dim, visual_dim)
+                # 融合投影层
+                self.img_sne_proj = nn.ModuleList([
+                    nn.Conv2d(visual_dim * 2, visual_dim, kernel_size=1) for _ in range(4)
+                ])
+
+            elif self.sne_fusion_mode == 'proj':
+                # 简单 proj 融合：投影层
+                self.img_sne_proj = nn.ModuleList([
+                    nn.Conv2d(visual_dim * 2, visual_dim, kernel_size=1) for _ in range(4)
+                ])
+            # 'add' 模式不需要额外模块
+
+        # 全局 OT 对齐 (可选)
+        if self.use_ot_align:
+            self.opt_sne = OTFeatureAligner(
+                dim=text_dim,
+                use_score_prior=self.ot_use_score_prior,
+                fuse_output=self.ot_fuse_output,
+                cost_type=self.ot_cost_type,
+            )
+            self.opt_img = OTFeatureAligner(
+                dim=text_dim,
+                use_score_prior=self.ot_use_score_prior,
+                fuse_output=self.ot_fuse_output,
+                cost_type=self.ot_cost_type,
+            )
+            if not hasattr(self, 'text_proj'):
+                self.text_proj = nn.Linear(text_dim, visual_dim)
+
+    def _init_prompt_modules(self, token_embed_dim, context_length):
+        """初始化 Prompt 相关模块。"""
+        # 可学习 prompt (CoOp style)
+        if self.use_learnable_prompt:
+            # 父类已初始化 self.contexts，这里初始化额外的
+            self.contexts_traversable = nn.Parameter(
+                torch.randn(1, self.prompt_num, token_embed_dim)
+            )
+            self.contexts_notraversable = nn.Parameter(
+                torch.randn(1, self.prompt_num, token_embed_dim)
+            )
+            nn.init.trunc_normal_(self.contexts_traversable)
+            nn.init.trunc_normal_(self.contexts_notraversable)
+        else:
+            # 不使用可学习 prompt，使用固定 context (None)
+            self.contexts = None
+            self.contexts_traversable = None
+            self.contexts_notraversable = None
+
+        # 场景感知提示分类模块
+        if self.prompt_cls:
+            self.weather_prompt = nn.Parameter(
+                torch.randn(1, self.prompt_num, token_embed_dim)
+            )
+            self.light_prompt = nn.Parameter(
+                torch.randn(1, self.prompt_num, token_embed_dim)
+            )
+            self.road_prompt = nn.Parameter(
+                torch.randn(1, self.prompt_num, token_embed_dim)
+            )
+            self._init_attribute_embeddings(context_length)
+
+    def _init_attribute_embeddings(self, context_length):
+        """初始化场景属性的文本嵌入。"""
+        self.attr_texts = {}
+        self.attr_t0 = {}
+        self.attr_I = {}
+
+        for name, classes in [
+            ('weather', self.WEATHER_CLASSES),
+            ('road', self.ROAD_CLASSES),
+            ('light', self.LIGHT_CLASSES),
+        ]:
+            self.attr_texts[name] = torch.cat([
+                tokenize(c, context_length=context_length) for c in classes
+            ]).to('cuda')
+            self.attr_t0[name] = self._compute_normalized_text_features(classes)
+            self.attr_I[name] = torch.arange(len(classes), device='cuda')
+
+    def _compute_normalized_text_features(self, class_names):
+        """计算归一化的文本特征用于正则化。"""
+        tokens = torch.cat([
+            tokenize(f"A photo of {c}", context_length=self.text_encoder.context_length)
+            for c in class_names
+        ]).to('cuda')
+        features = self.text_encoder(tokens, context=None)
+        return F.normalize(features, dim=-1, p=2)
+
+    # =========================================================================
+    # 特征提取方法
+    # =========================================================================
+
+    def extract_feat(self, img, sne=None):
+        """提取图像特征和可选的 SNE 特征。"""
         x = self.backbone.extract_feats(img)
-        return x
+        if self.patch_fpn:
+            x = self._apply_patch_fpn(x)
+
+        if self.use_sne and sne is not None:
+            sne_feature = self.sne_backbone.extract_feats(sne)
+            if self.patch_fpn:
+                sne_feature = self._apply_patch_fpn(sne_feature)
+            return x, sne_feature
+
+        return x, None
 
     def after_extract_feat(self, x, sne=None):
+        """后处理特征提取结果。
+        
+        根据消融实验配置选择不同的处理路径。
+        """
         if self.use_sne:
-            assert sne is not None, "sne feature is None"
+            assert sne is not None, "SNE feature is required when use_sne=True"
+
+        # ======== 1. 分离多尺度特征和全局嵌入 ========
         x_orig = list(x[:-1])
-        if self.use_sne and sne is not None:
-            sne_orig = list(sne[:-1])
-            if self.use_cross_attn:
-                for m in range(len(x_orig)):
-                    b,f,h,w = x_orig[m].shape
-                    old_x, old_sne = x_orig[m].view(b,f,-1).permute(0,2,1).contiguous(), sne_orig[m].view(b,f,-1).permute(0,2,1).contiguous()
-                    new_x, new_sne, _, _= self.img_sne_attn[m](old_x, old_sne)
-                    x_orig[m], sne_orig[m] = new_x.permute(0,2,1).contiguous().view(b,f,h,w), new_sne.permute(0,2,1).contiguous().view(b,f,h,w)
-            new_orig = (x_orig, sne_orig)
-        else:
-            new_orig = x_orig
-        # global_feat[b,1,c]是开头的那个cls token， visual_embeddings是后面的patch tokens
         global_feat, visual_embeddings = x[-1]
-        visual_context = torch.cat([global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
         b_size = global_feat.shape[0]
 
+        sne_orig = None
+        sne_embeddings = None
         if self.use_sne and sne is not None:
-            global_sne_feat, sne_embeddings = sne[-1]
-            sne_context = torch.cat([global_sne_feat, sne_embeddings.flatten(-2).permute(0, 2, 1)], dim=1)
-        
+            sne_orig = list(sne[:-1])
+            _, sne_embeddings = sne[-1]
+
+        # 构建返回的多尺度特征
+        new_orig = (x_orig, sne_orig) if sne_orig is not None else x_orig
+
+        # ======== 2. 构建 Context (用于 Context Decoder) ========
+        visual_context = torch.cat(
+            [global_feat, visual_embeddings.flatten(-2).permute(0, 2, 1)], dim=1
+        )
+
+        sne_context = None
+        if self.use_sne and sne is not None and self.context_decoder_sne is not None:
+            global_sne_feat, sne_emb = sne[-1]
+            sne_context = torch.cat(
+                [global_sne_feat, sne_emb.flatten(-2).permute(0, 2, 1)], dim=1
+            )
+
+        # ======== 3. 生成文本嵌入 ========
         if self.prompt_cls:
-            # [b,1,c]
-            weather_embedding = self.text_encoder(self.weather_texts, context=self.weather_prompt).expand(b_size, -1, -1)
-            light_embedding = self.text_encoder(self.light_texts, context=self.light_prompt).expand(b_size, -1, -1)
-            road_embedding = self.text_encoder(self.road_texts, context=self.road_prompt).expand(b_size, -1, -1)
-
-            image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
-
-            # 2. 归一化文本特征
-            weather_feature = F.normalize(weather_embedding, dim=-1, p=2)
-            light_feature = F.normalize(light_embedding, dim=-1, p=2)
-            road_feature = F.normalize(road_embedding, dim=-1, p=2)
-
-            # 3. 计算余弦相似度作为分类 logits
-            #    'bc,bnc->bn' 表示 (B, C) @ (B, N, C) -> (B, N)
-            weather_logits = torch.einsum('bc,bnc->bn', image_feature, weather_feature)
-            light_logits = torch.einsum('bc,bnc->bn', image_feature, light_feature)
-            road_logits = torch.einsum('bc,bnc->bn', image_feature, road_feature)
-
-            attr_embeddings = (weather_embedding, light_embedding, road_embedding)
-            attr_logits = (weather_logits, light_logits, road_logits)
-
-            # --- 新增：根据 logits 获取预测的类别文本 ---
-            # 1. 找到每个 logits 中得分最高的索引
-            weather_preds_idx = weather_logits.argmax(dim=1)
-            light_preds_idx = light_logits.argmax(dim=1)
-            road_preds_idx = road_logits.argmax(dim=1)
-
-            # 2. 根据索引从类别名称列表中查找文本
-            #    这将为批次中的每个图像生成一个预测文本
-            pred_weather_texts = [self.weather_class_names[i] for i in weather_preds_idx]
-            pred_light_texts = [self.light_class_names[i] for i in light_preds_idx]
-            pred_road_texts = [self.road_class_names[i] for i in road_preds_idx]
-
-            tokenized_prompts_list = []
-            for i in range(b_size):
-                # 1. 构建当前图片专属的动态前缀 (已加入天气信息)
-                dynamic_prefix = f"A {pred_weather_texts[i]} scene during {pred_light_texts[i]} on a {pred_road_texts[i]}, "
-                
-                # 2. 创建新的文本提示 (e.g., "A sunny scene during daytime on a paved road, a clean origami of a car")
-                # full_dynamic_prompts = [f"{dynamic_prefix}{c}" for c in self.class_names]
-                dynamic_traversable_prompt = f"{dynamic_prefix}"
-                dynamic_traversable_token = tokenize(dynamic_traversable_prompt, context_length=self.context_length).to(global_feat.device)
-                dynamic_traversable_embedding = self.text_encoder(dynamic_traversable_token, context=self.contexts_traversable)
-                dynamic_notraversable_prompt = f"{dynamic_prefix}"
-                dynamic_notraversable_token = tokenize(dynamic_notraversable_prompt, context_length=self.context_length).to(global_feat.device)
-                dynamic_notraversable_embedding = self.text_encoder(dynamic_notraversable_token, context=self.contexts_notraversable)
-                current_dynamic_embedding = torch.cat([dynamic_traversable_embedding, dynamic_notraversable_embedding], dim=0)
-                
-                tokenized_prompts_list.append(current_dynamic_embedding)
-
-            # 5. 将列表中的所有张量堆叠成一个新的批次
-            text_embeddings = torch.stack(tokenized_prompts_list, dim=0)
-            global_feat = (global_feat, attr_embeddings,  attr_logits)
+            text_embeddings, global_feat = self._generate_dynamic_text_embeddings(
+                global_feat, b_size
+            )
         else:
-            text_embeddings = self.text_encoder(self.texts, context=self.contexts).expand(b_size, -1, -1)
+            # 根据是否使用可学习 prompt
+            context = self.contexts if self.use_learnable_prompt else None
+            text_embeddings = self.text_encoder(
+                self.texts, context=context
+            ).expand(b_size, -1, -1)
 
-        if self.context_decoder is not None:
-            # context decoder是使用text 从visual中提取信息，然后以较小的梯度加到text embeddings上
+        # ======== 4. Context Decoder 融合 (可选) ========
+        if self.use_context_decoder and self.context_decoder is not None:
             text_diff = self.context_decoder(text_embeddings, visual_context)
-            if self.use_sne and sne is not None:
+            if sne_context is not None and self.context_decoder_sne is not None:
                 text_sne_diff = self.context_decoder_sne(text_embeddings, sne_context)
-                text_embeddings = text_embeddings + self.gamma * text_diff + self.gamma_sne * text_sne_diff
+                text_embeddings = (
+                    text_embeddings +
+                    self.gamma * text_diff +
+                    self.gamma_sne * text_sne_diff
+                )
             else:
                 text_embeddings = text_embeddings + self.gamma * text_diff
+
         ret_text_emb = text_embeddings
 
-        visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
-        text_embeddings = F.normalize(text_embeddings, dim=-1, p=2)
-        # 做一次初步的分割, 余弦相似度
-        score_map_img = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
+        # ======== 5. 计算相似度图 ========
+        text_embeddings_norm = F.normalize(text_embeddings, dim=-1, p=2)
+        visual_embeddings_norm = F.normalize(visual_embeddings, dim=1, p=2)
+
         score_map = {
-            'img': score_map_img,
+            'img': torch.einsum('bchw,bkc->bkhw', visual_embeddings_norm, text_embeddings_norm)
         }
-        if self.use_sne and sne is not None:
-            sne_embeddings = F.normalize(sne_embeddings, dim=1, p=2)
-            score_map_sne = torch.einsum('bchw,bkc->bkhw', sne_embeddings, text_embeddings)
-            score_map.update(sne=score_map_sne)
+        if sne_embeddings is not None:
+            sne_embeddings_norm = F.normalize(sne_embeddings, dim=1, p=2)
+            score_map['sne'] = torch.einsum(
+                'bchw,bkc->bkhw', sne_embeddings_norm, text_embeddings_norm
+            )
+
+        # ======== 6. 构建原始嵌入返回值 ========
+        orig_embeddings = (x[-1], sne[-1] if sne is not None else None)
+
+        return new_orig, score_map, ret_text_emb, global_feat, orig_embeddings
+
+    def _apply_patch_fpn(self, feats_all):
+        """对 backbone 输出的多尺度特征进行补丁式金字塔重建，保持尾部全局特征不变。"""
+        if not isinstance(feats_all, (list, tuple)) or len(feats_all) < 2:
+            return feats_all
+        pyramid = list(feats_all[:-1])
+        tail = feats_all[-1]
+        pyramid = self._rebuild_pyramid_from_mid(pyramid)
+        return pyramid + [tail]
+
+    def _rebuild_pyramid_from_mid(self, feats):
+        """使用中尺度特征经 patch expand/merge 重建四层金字塔。"""
+        if len(feats) < 3:
+            return feats
+        base = feats[2]
+        p2 = self.patch_expand1(base)
+        p1 = self.patch_expand2(p2)
+        p3 = base
+        p4 = self.patch_merge1(base)
+        return [p1, p2, p3, p4]
+
+    def _generate_dynamic_text_embeddings(self, global_feat, b_size):
+        """生成动态场景感知文本嵌入。
         
-        return new_orig, score_map, ret_text_emb, global_feat, (x[-1],sne[-1])
+        根据图像特征预测天气/光照/路面属性，构建动态提示。
+        
+        Args:
+            global_feat: 全局图像特征 [B, 1, C]
+            b_size: 批次大小
+            
+        Returns:
+            tuple: (文本嵌入, 更新后的全局特征)
+        """
+        # 属性配置: (名称, 提示向量, 类别列表)
+        attr_configs = [
+            ('weather', self.weather_prompt, self.WEATHER_CLASSES),
+            ('light', self.light_prompt, self.LIGHT_CLASSES),
+            ('road', self.road_prompt, self.ROAD_CLASSES),
+        ]
+
+        # 归一化图像特征
+        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
+
+        # 统一处理三个属性
+        attr_embeddings = {}
+        attr_logits = {}
+        attr_preds = {}
+
+        for name, prompt, classes in attr_configs:
+            # 编码属性文本
+            emb = self.text_encoder(
+                self.attr_texts[name], context=prompt
+            ).expand(b_size, -1, -1)
+            attr_embeddings[name] = emb
+
+            # 归一化并计算 logits (余弦相似度)
+            emb_norm = F.normalize(emb, dim=-1, p=2)
+            logits = torch.einsum('bc,bnc->bn', image_feature, emb_norm)
+            attr_logits[name] = logits
+
+            # 预测类别
+            attr_preds[name] = logits.argmax(dim=1)
+
+        # 构建动态提示
+        tokenized_prompts = []
+        for i in range(b_size):
+            dynamic_prefix = (
+                f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
+                f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
+                f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]}, "
+            )
+
+            # 编码可通行/不可通行嵌入
+            trav_token = tokenize(
+                dynamic_prefix, context_length=self.context_length
+            ).to(global_feat.device)
+            trav_emb = self.text_encoder(trav_token, context=self.contexts_traversable)
+
+            notrav_token = tokenize(
+                dynamic_prefix, context_length=self.context_length
+            ).to(global_feat.device)
+            notrav_emb = self.text_encoder(notrav_token, context=self.contexts_notraversable)
+
+            tokenized_prompts.append(
+                torch.cat([trav_emb, notrav_emb], dim=0)
+            )
+
+        text_embeddings = torch.stack(tokenized_prompts, dim=0)
+        updated_global_feat = (global_feat, attr_embeddings, attr_logits)
+
+        return text_embeddings, updated_global_feat
+
+    # =========================================================================
+    # 可视化方法
+    # =========================================================================
 
     def save_img_sne_merge(self, img, sne, img_metas, masks, info=None):
-        # 合并sne±img，并转化为img保存。
+        """保存 RGB-SNE 融合可视化到 SwanLab。
+        
+        Args:
+            img: RGB 图像
+            sne: Surface Normal 图像
+            img_metas: 图像元数据
+            masks: 分割掩码
+            info: 场景属性信息 (可选)
+        """
+        # 构建场景描述
+        scene = ""
         if info is not None:
-            scene = f", weather_true: {self.weather_class_names[info['weather_true'][0]]}, weather_pred: {self.weather_class_names[info['weather_pred'][0]]}, road_true: {self.road_class_names[info['road_true'][0]]}, road_pred: {self.road_class_names[info['road_pred'][0]]}, light_true: {self.light_class_names[info['light_true'][0]]}, light_pred: {self.light_class_names[info['light_pred'][0]]}"
-        else:
-            scene = ""
+            scene = (
+                f", weather: {self.WEATHER_CLASSES[info['weather_true'][0]]}"
+                f"->{self.WEATHER_CLASSES[info['weather_pred'][0]]}, "
+                f"road: {self.ROAD_CLASSES[info['road_true'][0]]}"
+                f"->{self.ROAD_CLASSES[info['road_pred'][0]]}, "
+                f"light: {self.LIGHT_CLASSES[info['light_true'][0]]}"
+                f"->{self.LIGHT_CLASSES[info['light_pred'][0]]}"
+            )
+
+        # 准备张量
         im = img[0].detach().float().cpu()
         sn = sne[0].detach().float().cpu()
-        if masks is not None:
-            ma = masks[0][0:1].detach().float().cpu()
-        else:
-            ma = torch.ones_like(im)
-        def _to01(x):
+        ma = masks[0][0:1].detach().float().cpu() if masks is not None else torch.ones_like(im)
+
+        def _normalize_to_01(x):
+            """将张量归一化到 [0, 1] 范围。"""
             x = x.clone()
             x -= x.min()
-            denom = x.max() - x.min() + 1e-6
-            x /= denom
+            x /= (x.max() - x.min() + 1e-6)
             if x.size(0) == 1:
                 x = x.repeat(3, 1, 1)
             return x.clamp(0, 1)
 
-        im01 = _to01(im)
-        sn01 = _to01(sn)
-        ma01 = _to01(ma)
-        # 简单叠加可视化
+        im01 = _normalize_to_01(im)
+        sn01 = _normalize_to_01(sn)
+        ma01 = _normalize_to_01(ma)
         overlay = (0.6 * im01 + 0.4 * sn01).clamp(0, 1)
 
-        concat1 = torch.cat([im01, sn01], dim=2)
-        concat2 = torch.cat([overlay, ma01], dim=2)
-        concat = torch.cat([concat1, concat2], dim=1)
-        # 横向拼接 [C, H, W_total]
+        # 拼接可视化
+        row1 = torch.cat([im01, sn01], dim=2)
+        row2 = torch.cat([overlay, ma01], dim=2)
+        concat = torch.cat([row1, row2], dim=1)
 
         try:
-            # --- 开始修改 ---
-            # 1. 将范围在 [0, 1] 的浮点数张量乘以 255，转换为 [0, 255] 范围。
-            # 2. 使用 .byte() 或 .to(torch.uint8) 转换为 8 位无符号整数类型。
-            # 3. 使用 .permute(1, 2, 0) 将形状从 (C, H, W) 转换为 (H, W, C)，这是图像库（如 PIL, OpenCV）和 swanlab 所期望的格式。
-            # 4. 使用 .numpy() 转换为 NumPy 数组。
             image_numpy = (concat * 255).byte().permute(1, 2, 0).numpy()
+            base_name = os.path.basename(
+                img_metas[0].get('ori_filename', f'{self.save_img_sne_sum}.png')
+            )
+            caption = f"img|sne|overlay|mask for {base_name}{scene}"
+            image_to_log = swanlab.Image(image_numpy, caption=caption)
 
-            # 5. 使用 swanlab.Image 包装 NumPy 数组并上传。
-            base_name = os.path.basename(img_metas[0].get('ori_filename', f'{self.save_img_sne_sum}.png'))
-            image_to_log = swanlab.Image(image_numpy, caption=f"img|sne|overlay|mask for {base_name}{scene}")
-            
-            if not self.training:
-                self.save_img_sne_sum_val += 1
-                swanlab.log({"Val Samples": image_to_log})
-                print(f"Saved Val Samples {self.save_img_sne_sum_val}")
-            else:
+            if self.training:
                 self.save_img_sne_sum += 1
                 swanlab.log({"Train Samples": image_to_log})
-                print(f"Saved Train Samples {self.save_img_sne_sum}")
+            else:
+                self.save_img_sne_sum_val += 1
+                swanlab.log({"Val Samples": image_to_log})
         except Exception:
             pass
 
+    # =========================================================================
+    # 训练方法
+    # =========================================================================
+
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
+        """训练前向传播。"""
         losses = dict()
 
-        x = self.extract_feat(img)
-        sne = kwargs.get('sne', None)
-        masks = kwargs.get('gt_masks', None)
-        sne_feature = None
+        # 特征提取 (RGB + SNE)
+        sne = kwargs.get('sne')
+        masks = kwargs.get('gt_masks')
+
+        x, sne_feature = self.extract_feat(img, sne)
+
+        # 保存可视化样本
         if self.use_sne and sne is not None:
+            if not hasattr(self, 'save_img_sne_sum'):
+                self.save_img_sne_sum = 0
             if self.save_img_sne_sum < 10:
                 self.save_img_sne_merge(img, sne, img_metas, masks)
-            sne_feature = self.sne_backbone.extract_feats(sne)
-            
-        x_orig, score_map_all, text_emb, global_feat, score = self.after_extract_feat(x, sne_feature)
 
+        # 后处理特征
+        x_orig, score_map_all, text_emb, global_feat, score = self.after_extract_feat(
+            x, sne_feature
+        )
 
-        score_map = score_map_all['img']
-
+        # 分离 RGB 和 SNE 特征
         if isinstance(x_orig, tuple):
             x_orig, sne_orig = x_orig
         else:
             sne_orig = None
-        
-        if self.use_sne and self.feature_phase == 'pixel' and self.feature_mode == 'proj':
-            x_score, sne_score = score
-            _, x_visual = x_score
-            _, sne_visual = sne_score
-            visual_embeddings = self.img_sne_proj[0](torch.cat([x_visual, sne_visual], dim=1))
-            visual_embeddings = F.normalize(visual_embeddings, dim=1, p=2)
-            text_embeddings = F.normalize(text_emb, dim=-1, p=2)
-            # 做一次初步的分割, 余弦相似度
-            score_map_img = torch.einsum('bchw,bkc->bkhw', visual_embeddings, text_embeddings)
-            score_map_all = {
-                'img_sne': score_map_img,
-            }
-            score_map_fusion = score_map_all['img_sne']
-            # identity是什么？
-            loss_score_map_fusion = self.identity_head.forward_train(
-                score_map_fusion/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-            losses.update(add_prefix(loss_score_map_fusion, 'img_sne_map'))
 
-        # if 'sne' in score_map_all:
-        #     score_map_sne = score_map_all['sne']
-        #     # identity是什么？
-        #     loss_score_map_sne = self.identity_head.forward_train(
-        #         score_map_sne/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-        #     losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
+        # ======== SNE 特征融合 (根据 fusion_stage) ========
+        sne_for_decode = None  # 默认不传 SNE 给 decode_head
+        pi_maps = None
+
+        if self.use_sne and sne_orig is not None:
+            if self.sne_fusion_stage == 'backbone':
+                # backbone 阶段融合: 在 segmentor 中完成融合
+                # 传入 score_map 用于 OT 融合的文本分布先验
+                collect_pi = self.supervise_ot_pi and self.sne_fusion_mode == 'ot'
+                x_orig, fusion_losses, pi_maps = self._fuse_sne_features(
+                    x_orig,
+                    sne_orig,
+                    text_emb,
+                    score_map=score_map_all,
+                    collect_pi=collect_pi,
+                    gt_semantic_seg=gt_semantic_seg,
+                    img_metas=img_metas,
+                    identity_head=self.identity_head,
+                    train_cfg=self.train_cfg,
+                    supervise_ot_pi=self.supervise_ot_pi,
+                )
+                losses.update(fusion_losses)
+                # 融合已完成，sne_for_decode 保持为 None
+            else:
+                # pixel 阶段融合: 传 SNE 给 decode_head
+                sne_for_decode = sne_orig
+
+        # ======== 全局 OT 对齐 (可选) ========
+        if self.use_ot_align and self.use_sne:
+            losses.update(self._compute_global_ot_loss(score, text_emb))
+
+        # Neck 处理
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
 
+        # 如果是 pixel 阶段融合，也要对 SNE 过 Neck
+        if sne_for_decode is not None and self.neck is not None:
+            sne_for_decode = list(self.neck(sne_for_decode))
+
+        # ======== 场景属性损失 ========
         if self.prompt_cls:
-            global_feat, attr_embedding, attr_logits = global_feat
-            weather_embedding, light_embedding, road_embedding = attr_embedding
-            weather_logits, light_logits, road_logits = attr_logits
+            global_feat, losses_attr = self._compute_attribute_losses(global_feat, img_metas)
+            losses.update(losses_attr)
 
-            weather_score = torch.einsum('blc,kc->bkl', F.normalize(weather_embedding, dim=-1, p=2), self.weather_t0.detach())
-            loss_weather_r = F.cross_entropy(weather_score,
-                self.weather_I.expand(weather_score.shape[0], -1),
-                reduction='mean')
-            loss_weather_r = {'loss' : loss_weather_r}
-            losses.update(add_prefix(loss_weather_r, 'reg.weather'))
+        # ======== 正则化损失 ========
+        losses.update(self._compute_regularization_losses(
+            text_emb, img, global_feat,
+            score_map=score_map_all,
+            img_metas=img_metas,
+            gt_semantic_seg=gt_semantic_seg,
+            pi_map=pi_maps
+        ))
 
-            light_score = torch.einsum('blc,kc->bkl', F.normalize(light_embedding, dim=-1, p=2), self.light_t0.detach())
-            loss_light_r = F.cross_entropy(light_score,
-                self.light_I.expand(light_score.shape[0], -1),
-                reduction='mean')
-            loss_light_r = {'loss' : loss_light_r}
-            losses.update(add_prefix(loss_light_r, 'reg.light'))
-
-            road_score = torch.einsum('blc,kc->bkl', F.normalize(road_embedding, dim=-1, p=2), self.road_t0.detach())
-            loss_road_r = F.cross_entropy(road_score,
-                self.road_I.expand(road_score.shape[0], -1),
-                reduction='mean')
-            loss_road_r = {'loss' : loss_road_r}
-            losses.update(add_prefix(loss_road_r, 'reg.road'))
-
-            road_list = []
-            weather_list = []
-            light_list = []
-            for i in range(len(img_metas)):
-                scene_name = img_metas[i]['ori_filename'].split('/')[1][1:].replace('_', '-')
-                road = self.scene2info[scene_name]['road'].split("_")[0] + ' road'
-                weather = self.scene2info[scene_name]['weather']
-                light = self.scene2info[scene_name]['light']
-                # 使用预测对应的标签计算损失，可能会由于只有某个场景产生偏差。
-                road_index = self.road_class_names.index(road)
-                weather_index = self.weather_class_names.index(weather)
-                light_index = self.light_class_names.index(light)
-                road_list.append(road_index)
-                weather_list.append(weather_index)
-                light_list.append(light_index)
-            road_target = torch.tensor(road_list).to(road_logits.device)
-            weather_target = torch.tensor(weather_list).to(weather_logits.device)
-            light_target = torch.tensor(light_list).to(light_logits.device)
-
-            loss_weather = F.cross_entropy(weather_logits/self.tau, weather_target, reduction='mean')
-            loss_road = F.cross_entropy(road_logits/self.tau, road_target, reduction='mean')
-            loss_light = F.cross_entropy(light_logits/self.tau, light_target, reduction='mean')
-            loss_weather_l = {'loss' : loss_weather}
-            loss_road_l = {'loss' : loss_road}
-            loss_light_l = {'loss' : loss_light}
-            # --- 1. 新增：将损失加入总损失字典 ---
-            losses.update(add_prefix(loss_weather_l, 'attr.weather'))
-            losses.update(add_prefix(loss_road_l, 'attr.road'))
-            losses.update(add_prefix(loss_light_l, 'attr.light'))
-
-            # --- 2. 新增：计算准确率 ---
-            with torch.no_grad():
-                # 天气准确率
-                pred_weather = torch.argmax(weather_logits, dim=1)
-                correct_weather = (pred_weather == weather_target).sum()
-                total_samples = weather_target.size(0)
-                self.acc_weather = correct_weather.float() / total_samples
-
-                # 道路准确率
-                pred_road = torch.argmax(road_logits, dim=1)
-                correct_road = (pred_road == road_target).sum()
-                self.acc_road = correct_road.float() / total_samples
-
-                # 光照准确率
-                pred_light = torch.argmax(light_logits, dim=1)
-                correct_light = (pred_light == light_target).sum()
-                self.acc_light = correct_light.float() / total_samples
-            
-
-        # language regularization
-        if self.textual_reg is True:
-            content_score = torch.einsum('blc,kc->bkl', F.normalize(text_emb, dim=-1, p=2), self.reg_T0.detach())
-            loss_reg_l = F.cross_entropy(content_score,
-                self.reg_I.expand(content_score.shape[0], -1),
-                reduction='mean')
-            loss_reg_l = {'loss' : loss_reg_l}
-            losses.update(add_prefix(loss_reg_l, 'reg.textual'))
-
-        # vision regularization
-        if self.visual_reg is True:
-            with torch.no_grad():
-                # _是什么？
-                global_feat_0, _ = self.reg_E0.extract_feats(img)[-1]
-            # 只限制第一个分类的距离，不限制patch的距离。
-            loss_reg_v = nn.MSELoss(reduction='mean')(global_feat, global_feat_0)
-            loss_reg_v = {'loss' : loss_reg_v}
-            losses.update(add_prefix(loss_reg_v, 'reg.visual'))
-
-        # vision-language regularization
-        # if self.identity_head is not None:
-        #     # identity是什么？
-        #     loss_score_map = self.identity_head.forward_train(
-        #         score_map/self.tau, img_metas, gt_semantic_seg, self.train_cfg)
-        #     losses.update(add_prefix(loss_score_map, 'scr_map'))
-
-        # decode head loss
+        # ======== Decode Head 损失 ========
         loss_decode = self.decode_head.forward_train(
-            x, text_emb, img_metas, gt_semantic_seg, self.train_cfg, kwargs['gt_labels'], kwargs['gt_masks'], sne_feature=sne_orig, feature_mode=self.feature_mode)
+            x, text_emb, img_metas, gt_semantic_seg, self.train_cfg,
+            kwargs['gt_labels'], kwargs['gt_masks'],
+            sne_feature=sne_for_decode
+        )
         losses.update(add_prefix(loss_decode, 'decode'))
 
         return losses
 
-    def encode_decode(self, img, img_metas, return_attn=False, **kwargs):
-        x = self.extract_feat(img)
-        sne = kwargs.get('sne', None)
-        masks = kwargs.get('gt_masks', None)
-        sne_feature = None
-        if self.use_sne and sne is not None:
-            sne_feature = self.sne_backbone.extract_feats(sne)
-        x_orig, score_map_all, text_emb, global_feat, _ = self.after_extract_feat(x, sne_feature)
-        score_map = score_map_all['img']
+    def _fuse_sne_features(
+        self,
+        x_orig,
+        sne_orig,
+        text_emb,
+        score_map=None,
+        debug_store=None,
+        collect_pi=False,
+        gt_semantic_seg=None,
+        img_metas=None,
+        identity_head=None,
+        train_cfg=None,
+        supervise_ot_pi=False,
+    ):
+        """根据 sne_fusion_mode 融合 RGB 和 SNE 特征 (backbone 阶段)。
+        
+        Args:
+            x_orig: RGB 多尺度特征列表
+            sne_orig: SNE 多尺度特征列表
+            text_emb: 文本嵌入
+            score_map: 相似度图字典，用于 OT 融合的文本分布先验
+            
+        Returns:
+            tuple: (融合后的特征, 损失字典, 可选的 pi 字典)
+        """
+        losses = {}
+        pi_maps = None
 
-        if self.prompt_cls:
-            global_feat, attr_embedding, attr_logits = global_feat
-            weather_logits, light_logits, road_logits = attr_logits
+        if self.sne_fusion_mode == 'proj':
+            # proj 融合：concat + 1x1 conv
+            x_orig = self._proj_fusion(x_orig, sne_orig)
 
-            road_list = []
-            weather_list = []
-            light_list = []
-            for i in range(len(img_metas)):
-                scene_name = img_metas[i]['ori_filename'].split('/')[1][1:].replace('_', '-')
-                road = self.scene2info[scene_name]['road'].split("_")[0] + ' road'
-                weather = self.scene2info[scene_name]['weather']
-                light = self.scene2info[scene_name]['light']
-                # 使用预测对应的标签计算损失，可能会由于只有某个场景产生偏差。
-                road_index = self.road_class_names.index(road)
-                weather_index = self.weather_class_names.index(weather)
-                light_index = self.light_class_names.index(light)
-                road_list.append(road_index)
-                weather_list.append(weather_index)
-                light_list.append(light_index)
-            road_target = torch.tensor(road_list).to(road_logits.device)
-            weather_target = torch.tensor(weather_list).to(weather_logits.device)
-            light_target = torch.tensor(light_list).to(light_logits.device)
+        elif self.sne_fusion_mode == 'add':
+            # add 融合：直接相加
+            x_orig = self._add_fusion(x_orig, sne_orig)
 
+        elif self.sne_fusion_mode == 'concat':
+            # concat 融合：通道拼接
+            x_orig = self._concat_fusion(x_orig, sne_orig)
+
+        elif self.sne_fusion_mode == 'cross_attn':
+            # 双向交叉注意力融合
+            x_orig, attn_losses = self._cross_attn_fusion(x_orig, sne_orig)
+            losses.update(attn_losses)
+
+        elif self.sne_fusion_mode == 'ot':
+            # 最优传输融合 (使用 score_map 初始化文本分布)
+            x_orig, ot_losses, pi_maps = self._ot_fusion(
+                x_orig, sne_orig, text_emb, score_map,
+                debug_store=debug_store,
+                collect_pi=collect_pi,
+                gt_semantic_seg=gt_semantic_seg,
+                img_metas=img_metas,
+                identity_head=identity_head,
+                train_cfg=train_cfg,
+                supervise_ot_pi=supervise_ot_pi,
+            )
+            losses.update(ot_losses)
+
+        return x_orig, losses, pi_maps
+
+    def _proj_fusion(self, x_orig, sne_orig):
+        """Proj 融合: concat + 1x1 conv 降维。"""
+        for i in range(4):
+            fused = torch.cat([x_orig[i], sne_orig[i]], dim=1)
+            x_orig[i] = self.img_sne_proj[i](fused)
+        return x_orig
+
+    def _add_fusion(self, x_orig, sne_orig):
+        """Add 融合: 直接相加。"""
+        for i in range(4):
+            x_orig[i] = x_orig[i] + sne_orig[i]
+        return x_orig
+
+    def _concat_fusion(self, x_orig, sne_orig):
+        """Concat 融合: 通道拼接 (通道数翻倍，需要后续网络支持)。"""
+        for i in range(4):
+            x_orig[i] = torch.cat([x_orig[i], sne_orig[i]], dim=1)
+        return x_orig
+
+    def _cross_attn_fusion(self, x_orig, sne_orig):
+        """双向交叉注意力融合。"""
+        losses = {}
+        for i in range(4):
+            b, f, h, w = x_orig[i].shape
+
+            # 展平特征
+            x_flat = x_orig[i].view(b, f, -1).permute(0, 2, 1).contiguous()
+            sne_flat = sne_orig[i].view(b, f, -1).permute(0, 2, 1).contiguous()
+
+            # 双向交叉注意力
+            x_enhanced, sne_enhanced, _, _ = self.cross_attn_modules[i](x_flat, sne_flat)
+
+            # concat + proj 融合
+            fused = torch.cat([x_enhanced, sne_enhanced], dim=-1)
+            fused = fused.permute(0, 2, 1).contiguous().view(b, f * 2, h, w)
+            x_orig[i] = self.img_sne_proj[i](fused)
+
+        return x_orig, losses
+
+    def _ot_fusion(
+        self,
+        x_orig,
+        sne_orig,
+        text_emb,
+        score_map=None,
+        debug_store=None,
+        collect_pi=False,
+        gt_semantic_seg=None,
+        img_metas=None,
+        identity_head=None,
+        train_cfg=None,
+        supervise_ot_pi=False,
+    ):
+        """最优传输融合 (与 text 对齐)。
+        
+        Args:
+            x_orig: RGB 多尺度特征列表
+            sne_orig: SNE 多尺度特征列表  
+            text_emb: 文本嵌入
+            score_map: 相似度图字典，用于初始化 OT 的文本分布
+                       使用 score_map 反映实际的类别比例，而非均匀分布
+        """
+        losses = {}
+        pi_maps = {'img': [], 'sne': []} if collect_pi else None
+        new_text = self.text_proj(text_emb)
+        new_text_norm = F.normalize(new_text, dim=-1, p=2)
+        
+        # 分别获取 img 和 sne 的 score_map
+        img_score_map = None
+        sne_score_map = None
+        if score_map is not None:
+            img_score_map = score_map.get('img')  # [B, K, H, W]
+            sne_score_map = score_map.get('sne')  # [B, K, H, W]
+
+        for i in range(1,4):
+            b, f, h, w = x_orig[i].shape
+
+            # 展平特征
+            old_x = x_orig[i].view(b, f, -1).permute(0, 2, 1).contiguous()
+            old_sne = sne_orig[i].view(b, f, -1).permute(0, 2, 1).contiguous()
+            
+            # 将 score_map resize 到当前尺度 (img 和 sne 分别处理)
+            scale_img_score_map = None
+            scale_sne_score_map = None
+            if img_score_map is not None:
+                scale_img_score_map = F.interpolate(
+                    img_score_map, size=(h, w), mode='bilinear', align_corners=False
+                )
+            if sne_score_map is not None:
+                scale_sne_score_map = F.interpolate(
+                    sne_score_map, size=(h, w), mode='bilinear', align_corners=False
+                )
+
+            # OT 对齐 (img 和 sne 使用各自的 score_map 作为文本分布先验)
+            new_x, loss_x, pi_img = self.img_attn[i](old_x, new_text, score_map=scale_img_score_map)
+            new_sne, loss_sne, pi_sne = self.sne_attn[i](old_sne, new_text, score_map=scale_sne_score_map)
+
+            # 收集调试/监督用的传输计划 (pi)
+            if debug_store is not None or collect_pi:
+                if debug_store is not None:
+                    if 'pi_img' not in debug_store:
+                        debug_store['pi_img'] = []
+                    if 'pi_sne' not in debug_store:
+                        debug_store['pi_sne'] = []
+
+                # 将 pi 还原为 [B, K, H, W] 方便插值保存/监督
+                pi_img_map = pi_img.view(b, h, w, -1).permute(0, 3, 1, 2)
+                pi_sne_map = pi_sne.view(b, h, w, -1).permute(0, 3, 1, 2)
+                # debug_store 只存 detached 版本用于可视化
+                if debug_store is not None:
+                    debug_store['pi_img'].append(pi_img_map.detach())
+                    debug_store['pi_sne'].append(pi_sne_map.detach())
+                # 监督路径保留梯度，不要 detach
+                if collect_pi and pi_maps is not None:
+                    pi_maps['img'].append(pi_img_map)
+                    pi_maps['sne'].append(pi_sne_map)
+
+            # concat + proj 融合
+            fused = torch.cat([new_x, new_sne], dim=-1)
+            fused = fused.permute(0, 2, 1).contiguous().view(b, f * 2, h, w)
+            x_orig[i] = self.img_sne_proj[i](fused)
+
+            losses.update(add_prefix({'loss': loss_x}, f'img_ot_{i}'))
+            losses.update(add_prefix({'loss': loss_sne}, f'sne_ot_{i}'))
+
+            # 可选：对 OT 对齐后的 new_x/new_sne 与 new_text 直接做分割监督
+            if supervise_ot_pi and identity_head is not None and gt_semantic_seg is not None:
+                def _score_and_loss(feat_bhwc, prefix):
+                    feat_map = feat_bhwc.view(b, h, w, f).permute(0, 3, 1, 2)  # B,C,H,W
+                    feat_norm = F.normalize(feat_map, dim=1, p=2)
+                    score = torch.einsum('bchw,bkc->bkhw', feat_norm, new_text_norm)
+                    loss_map = identity_head.forward_train(
+                        score / self.tau, img_metas, gt_semantic_seg, train_cfg
+                    )
+                    losses.update(add_prefix(loss_map, prefix))
+
+                _score_and_loss(new_x, f'ot_feat_img_{i}')
+                _score_and_loss(new_sne, f'ot_feat_sne_{i}')
+
+        return x_orig, losses, pi_maps
+
+    def _compute_global_ot_loss(self, score, text_emb):
+        """计算全局 OT 对齐损失。"""
+        losses = {}
+        x_score, sne_score = score
+        _, x_visual = x_score
+        _, sne_visual = sne_score
+
+        # 展平视觉特征
+        x_flat = x_visual.view(x_visual.size(0), x_visual.size(1), -1)
+        x_flat = x_flat.permute(0, 2, 1).contiguous()
+        sne_flat = sne_visual.view(sne_visual.size(0), sne_visual.size(1), -1)
+        sne_flat = sne_flat.permute(0, 2, 1).contiguous()
+
+        # OT 对齐
+        _, loss_img, _ = self.opt_img(x_flat, text_emb)
+        _, loss_sne, _ = self.opt_sne(sne_flat, text_emb)
+
+        losses.update(add_prefix({'loss': loss_sne}, 'sne_opt'))
+        losses.update(add_prefix({'loss': loss_img}, 'img_opt'))
+
+        return losses
+
+    def _get_attribute_targets(self, img_metas):
+        """从元数据中获取属性标签。"""
+        weather_list, light_list, road_list = [], [], []
+
+        for meta in img_metas:
+            scene_name = meta['ori_filename'].split('/')[1][1:].replace('_', '-')
+            info = self.scene2info[scene_name]
+
+            weather_list.append(self.WEATHER_CLASSES.index(info['weather']))
+            light_list.append(self.LIGHT_CLASSES.index(info['light']))
+            road_list.append(self.ROAD_CLASSES.index(
+                info['road'].split("_")[0] + ' road'
+            ))
+
+        device = next(self.parameters()).device
+        return (
+            torch.tensor(weather_list, device=device),
+            torch.tensor(light_list, device=device),
+            torch.tensor(road_list, device=device),
+        )
+
+    def _compute_attribute_losses(self, global_feat, img_metas):
+        """计算场景属性分类损失。"""
+        losses = {}
+        global_feat_tensor, attr_embeddings, attr_logits = global_feat
+
+        # 获取真实标签
+        attr_targets = dict(zip(
+            ['weather', 'light', 'road'],
+            self._get_attribute_targets(img_metas)
+        ))
+
+        # 统一计算属性损失
+        for name in ['weather', 'light', 'road']:
+            emb = attr_embeddings[name]
+            logits = attr_logits[name]
+            target = attr_targets[name]
+
+            # 属性正则化损失
+            score = torch.einsum(
+                'blc,kc->bkl', F.normalize(emb, dim=-1, p=2), self.attr_t0[name].detach()
+            )
+            reg_loss = F.cross_entropy(
+                score, self.attr_I[name].expand(score.shape[0], -1), reduction='mean'
+            )
+            losses.update(add_prefix({'loss': reg_loss}, f'reg.{name}'))
+
+            # 属性分类损失
+            cls_loss = F.cross_entropy(logits / self.tau, target, reduction='mean')
+            losses.update(add_prefix({'loss': cls_loss}, f'attr.{name}'))
+
+        # 计算准确率
+        with torch.no_grad():
+            total = attr_targets['weather'].size(0)
+            self.acc_weather = (attr_logits['weather'].argmax(1) == attr_targets['weather']).sum().float() / total
+            self.acc_light = (attr_logits['light'].argmax(1) == attr_targets['light']).sum().float() / total
+            self.acc_road = (attr_logits['road'].argmax(1) == attr_targets['road']).sum().float() / total
+
+        return global_feat_tensor, losses
+
+    def _compute_regularization_losses(self, text_emb, img, global_feat, score_map=None, img_metas=None, gt_semantic_seg=None, pi_map=None):
+        """计算正则化损失。
+        
+        Args:
+            text_emb: 文本嵌入
+            img: 输入图像
+            global_feat: 全局特征
+            score_map: 相似度图字典 (可选，用于 vision-language reg)
+            img_metas: 图像元数据 (可选)
+            gt_semantic_seg: 真实分割标签 (可选)
+        """
+        losses = {}
+
+        # 提取真实的 global_feat tensor
+        if isinstance(global_feat, tuple):
+            global_feat = global_feat[0]
+
+        # 文本正则化
+        if self.textual_reg:
+            content_score = torch.einsum(
+                'blc,kc->bkl', F.normalize(text_emb, dim=-1, p=2), self.reg_T0.detach()
+            )
+            loss = F.cross_entropy(
+                content_score,
+                self.reg_I.expand(content_score.shape[0], -1),
+                reduction='mean'
+            )
+            losses.update(add_prefix({'loss': loss}, 'reg.textual'))
+
+        # 视觉正则化
+        if self.visual_reg:
             with torch.no_grad():
-                # 天气准确率
-                pred_weather = torch.argmax(weather_logits, dim=1)
-                correct_weather = (pred_weather == weather_target).sum()
-                total_samples = weather_target.size(0)
-                self.val_acc_weather = correct_weather.float() / total_samples
+                global_feat_0, _ = self.reg_E0.extract_feats(img)[-1]
+            loss = nn.MSELoss(reduction='mean')(global_feat, global_feat_0)
+            losses.update(add_prefix({'loss': loss}, 'reg.visual'))
 
-                # 道路准确率
-                pred_road = torch.argmax(road_logits, dim=1)
-                correct_road = (pred_road == road_target).sum()
-                self.val_acc_road = correct_road.float() / total_samples
+        # Vision-Language 正则化 (基于 score_map)
+        if self.identity_head is not None and score_map is not None:
+            # RGB score map 正则化
+            if 'img' in score_map:
+                loss_score_map = self.identity_head.forward_train(
+                    score_map['img'] / self.tau, img_metas, gt_semantic_seg, self.train_cfg
+                )
+                losses.update(add_prefix(loss_score_map, 'scr_map'))
 
-                # 光照准确率
-                pred_light = torch.argmax(light_logits, dim=1)
-                correct_light = (pred_light == light_target).sum()
-                self.val_acc_light = correct_light.float() / total_samples
-                if self.save_img_sne_sum_val < 10:
-                    info = {
-                        'weather_true': weather_list,
-                        'weather_pred': pred_weather.tolist(),
-                        'road_true': road_list,
-                        'road_pred': pred_road.tolist(),
-                        'light_true': light_list,
-                        'light_pred': pred_light.tolist(),
-                    }
-                    self.save_img_sne_merge(img, sne, img_metas, masks, info)
+            # SNE score map 正则化
+            if 'sne' in score_map:
+                loss_score_map_sne = self.identity_head.forward_train(
+                    score_map['sne'] / self.tau, img_metas, gt_semantic_seg, self.train_cfg
+                )
+                losses.update(add_prefix(loss_score_map_sne, 'sne_map'))
 
+        # OT 传输计划深监督 (可选)
+        if self.supervise_ot_pi and self.identity_head is not None and pi_map is not None:
+            def _select_highres(tlist):
+                """Pick the 2nd-highest-resolution map to keep pyramid consistency."""
+                if isinstance(tlist, (list, tuple)):
+                    if len(tlist) >= 2:
+                        return tlist[-2]  # use penultimate level (source for up/down sampling)
+                    if len(tlist) == 1:
+                        return tlist[0]
+                return tlist
+
+            if 'img' in pi_map and pi_map['img']:
+                pi_img = _select_highres(pi_map['img'])
+                loss_pi_img = self.identity_head.forward_train(
+                    pi_img / self.tau, img_metas, gt_semantic_seg, self.train_cfg
+                )
+                losses.update(add_prefix(loss_pi_img, 'pi_img'))
+
+            if 'sne' in pi_map and pi_map['sne']:
+                pi_sne = _select_highres(pi_map['sne'])
+                loss_pi_sne = self.identity_head.forward_train(
+                    pi_sne / self.tau, img_metas, gt_semantic_seg, self.train_cfg
+                )
+                losses.update(add_prefix(loss_pi_sne, 'pi_sne'))
+
+        return losses
+
+    # =========================================================================
+    # 推理方法
+    # =========================================================================
+
+    def simple_test(self, img, img_meta, rescale=True, **kwargs):
+        """Simple test with optional attention/debug outputs.
+
+        Avoid让 return_attn/return_debug 透传到基类 whole_inference，直接使用 encode_decode
+        以便返回 tuple 时不再被 resize 误处理。
+        """
+        return_attn = kwargs.pop('return_attn', self.test_cfg.get('return_attn', False))
+        return_debug = kwargs.pop('return_debug', False)
+
+        out = self.encode_decode(
+            img, img_meta,
+            return_attn=return_attn,
+            return_debug=return_debug,
+            **kwargs
+        )
+
+        attn = None
+        debug_payload = None
+        if return_attn and return_debug:
+            seg_logit, attn, debug_payload = out
+        elif return_attn:
+            seg_logit, attn = out
+        elif return_debug:
+            seg_logit, debug_payload = out
+        else:
+            seg_logit = out
+
+        seg_pred = seg_logit.argmax(dim=1)
+        if self.save_seg_logit is True:
+            self.seg_logit = seg_logit.cpu().numpy()
+        if torch.onnx.is_in_onnx_export():
+            seg_pred = seg_pred.unsqueeze(0)
+            return seg_pred
+        seg_pred = seg_pred.cpu().numpy()
+        seg_pred = list(seg_pred)
+
+        if return_attn and return_debug:
+            return seg_pred, attn, debug_payload
+        if return_attn:
+            return seg_pred, attn
+        if return_debug:
+            return seg_pred, debug_payload
+        return seg_pred
+
+    def encode_decode(self, img, img_metas, return_attn=False, return_debug=False, debug_target_size=224, **kwargs):
+        """编码解码推理，可选返回中间结果用于可视化/调试。"""
+        # 特征提取 (RGB + SNE)
+        sne = kwargs.get('sne')
+        masks = kwargs.get('gt_masks')
+
+        x, sne_feature = self.extract_feat(img, sne)
+
+        x_orig, score_map_all, text_emb, global_feat, _ = self.after_extract_feat(
+            x, sne_feature
+        )
+
+        # 调试容器：仅在需要保存中间结果时初始化
+        debug_store = {'pi_img': [], 'pi_sne': []} if return_debug else None
+
+        # 验证时计算属性准确率
+        if self.prompt_cls:
+            self._compute_val_attribute_accuracy(global_feat, img_metas, img, sne, masks)
+
+        # 分离特征
         if isinstance(x_orig, tuple):
             x_orig, sne_orig = x_orig
         else:
             sne_orig = None
 
-        if 'sne' in score_map_all:
-            score_map_sne = score_map_all['sne']
+        # ======== SNE 特征融合 (根据 fusion_stage) ========
+        sne_for_decode = None  # 默认不传 SNE 给 decode_head
+
+        if self.use_sne and sne_orig is not None:
+            if self.sne_fusion_stage == 'backbone':
+                # backbone 阶段融合 (传入 score_map 用于 OT 融合)
+                x_orig, _, _ = self._fuse_sne_features(
+                    x_orig,
+                    sne_orig,
+                    text_emb,
+                    score_map=score_map_all,
+                    debug_store=debug_store,
+                    collect_pi=False,
+                    gt_semantic_seg=None,
+                    img_metas=None,
+                    identity_head=None,
+                    train_cfg=None,
+                    supervise_ot_pi=False,
+                )
+            else:
+                # pixel 阶段融合: 传 SNE 给 decode_head
+                sne_for_decode = sne_orig
+
+        # Neck 处理
         x = list(self.neck(x_orig)) if self.neck is not None else x_orig
-        
+
+        # 如果是 pixel 阶段融合，也要对 SNE 过 Neck
+        if sne_for_decode is not None and self.neck is not None:
+            sne_for_decode = list(self.neck(sne_for_decode))
+
+        # Decode head 推理
         out = self.decode_head.forward_test(
-            x, text_emb, img_metas, self.test_cfg, return_attn=return_attn, sne_feature=sne_orig, feature_mode=self.feature_mode)
-        
+            x, text_emb, img_metas, self.test_cfg,
+            return_attn=return_attn,
+            sne_feature=sne_for_decode
+        )
+
         if return_attn:
             out, attn = out
+
+        # 将输出恢复到原始图像尺寸以匹配 GT
+        ori_size = img_metas[0]['ori_shape'][:2]
         out = resize(
             input=out,
-            size=img.shape[-2:],
+            size=ori_size,
             mode='bilinear',
-            align_corners=False)
+            align_corners=False
+        )
+
+        debug_payload = None
+        if return_debug:
+            target_hw = (debug_target_size, debug_target_size) if isinstance(debug_target_size, int) else debug_target_size
+            debug_payload = {}
+
+            # score map 插值到统一尺寸
+            if score_map_all is not None:
+                if 'img' in score_map_all:
+                    debug_payload['score_map_img'] = F.interpolate(
+                        score_map_all['img'], size=target_hw, mode='bilinear', align_corners=False
+                    ).detach().cpu()
+                if 'sne' in score_map_all:
+                    debug_payload['score_map_sne'] = F.interpolate(
+                        score_map_all['sne'], size=target_hw, mode='bilinear', align_corners=False
+                    ).detach().cpu()
+
+            # OT 传输计划 pi 列表插值保存，仅在 OT 融合时可用
+            def _resize_pi_list(pi_list):
+                if pi_list is None:
+                    return []
+                resized = []
+                for pi_map in pi_list:
+                    # 仅保留前 2 类，形状 [B, 2, H, W]
+                    if pi_map.shape[1] > 2:
+                        pi_map = pi_map[:, :2]
+                    resized.append(
+                        F.interpolate(pi_map, size=target_hw, mode='bilinear', align_corners=False).detach().cpu()
+                    )
+                return resized
+
+            if debug_store is not None:
+                debug_payload['pi_img_levels'] = _resize_pi_list(debug_store.get('pi_img'))
+                debug_payload['pi_sne_levels'] = _resize_pi_list(debug_store.get('pi_sne'))
+
+        if return_attn and return_debug:
+            return out, attn, debug_payload
         if return_attn:
             return out, attn
-        else:
-            return out
+        if return_debug:
+            return out, debug_payload
+        return out
+
+    def _compute_val_attribute_accuracy(self, global_feat, img_metas, img, sne, masks):
+        """验证时计算属性准确率。"""
+        _, _, attr_logits = global_feat
+
+        # 获取真实标签
+        attr_targets = dict(zip(
+            ['weather', 'light', 'road'],
+            self._get_attribute_targets(img_metas)
+        ))
+
+        with torch.no_grad():
+            total = attr_targets['weather'].size(0)
+            attr_preds = {name: attr_logits[name].argmax(dim=1) for name in ['weather', 'light', 'road']}
+
+            self.val_acc_weather = (attr_preds['weather'] == attr_targets['weather']).sum().float() / total
+            self.val_acc_light = (attr_preds['light'] == attr_targets['light']).sum().float() / total
+            self.val_acc_road = (attr_preds['road'] == attr_targets['road']).sum().float() / total
+
+            # 保存验证样本可视化
+            if self.save_img_sne_sum_val < 10:
+                info = {
+                    f'{name}_true': attr_targets[name].tolist()
+                    for name in ['weather', 'road', 'light']
+                }
+                info.update({
+                    f'{name}_pred': attr_preds[name].tolist()
+                    for name in ['weather', 'road', 'light']
+                })
+                self.save_img_sne_merge(img, sne, img_metas, masks, info)

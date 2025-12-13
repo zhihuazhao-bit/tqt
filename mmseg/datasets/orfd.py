@@ -129,7 +129,8 @@ class ORFDDataset(CustomDataset):
         #     '2021-0403-1744', 
         #     '0602-1107', '2021-0222-1743', '2021-0403-1858'
         # ]
-        # self.all_scene = ['0609-1923', '2021-0223-1756']
+        self.all_scene = ['0609-1923', '2021-0223-1756']
+        # self.all_scene = ['2021-0223-1756']
         
         print_log(f"Classes: {self.CLASSES}")
         
@@ -341,8 +342,8 @@ class ORFDDataset(CustomDataset):
 
         print_log(f'file_stats: {len(file_stats)} items')
         file_stats_pd = pd.DataFrame.from_dict(file_stats).T
-        os.makedirs('./csv_result', exist_ok=True)
-         # 修正后的正确代码:
+        
+        # 修正后的正确代码:
         def get_attribute(scene_name, attr_key):
             """
             根据场景名称，从 self.scene_attr 中获取指定的属性值。
@@ -371,12 +372,17 @@ class ORFDDataset(CustomDataset):
         for key in ['weather', 'road', 'light']:
             file_stats_pd[key] = file_stats_pd['scene'].apply(lambda x: get_attribute(x, key))
 
-        if save_dir is not None and os.path.exists(save_dir):
-            file_stats_pd.to_csv(osp.join(save_dir, f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
-            print_log(f'file_stats saved to {save_dir}')
+        # 确定 CSV 保存目录：优先使用 save_dir，否则使用 ./csv_result
+        if save_dir is not None:
+            csv_save_dir = save_dir
+            os.makedirs(csv_save_dir, exist_ok=True)
         else:
-            file_stats_pd.to_csv(osp.join('./csv_result', f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv'))
-            print_log(f'file_stats saved to ./csv_result')
+            csv_save_dir = './csv_result'
+            os.makedirs(csv_save_dir, exist_ok=True)
+        
+        csv_path = osp.join(csv_save_dir, f'{self.dataset_mode}_eval_file_stats_{time.strftime("%Y%m%d_%H%M%S")}.csv')
+        file_stats_pd.to_csv(csv_path)
+        print_log(f'file_stats saved to {csv_path}')
         
         # Because dataset.CLASSES is required for per-eval.
         if self.CLASSES is None:
@@ -419,8 +425,9 @@ class ORFDDataset(CustomDataset):
                         class_pred_label = subgroup[f'class{i}_pred_label'].sum()
                         sub_conf_mat[i, i] = class_intersect  # TP
                         sub_conf_mat[i, 1-i] = class_area_label - class_intersect  # FP
-                        print_log(f'Confusion Matrix for {key[0]} {value} {key[1]} {subvalue}:')
-                        self.pretty_print_conf_mat(sub_conf_mat, class_names=class_names)
+                    # 打印语句应在 for i 循环外部
+                    print_log(f'Confusion Matrix for {key[0]} {value} {key[1]} {subvalue}:')
+                    self.pretty_print_conf_mat(sub_conf_mat, class_names=class_names)
 
         conf_mat = np.zeros((class_num, class_num), dtype=np.int64)
         for i in range(class_num):
