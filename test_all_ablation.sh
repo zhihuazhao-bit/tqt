@@ -77,9 +77,71 @@ CONFIG_F2d2="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_L2
 CKPT_F2d3="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt-no-l2/20251212_2257/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2d3="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_No_L2.py"
 
+CKPT_F2d4="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos/20251213_1826/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2d4="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos.py"
+
+# F2d-mean: 224 + EVA02 + SNE(OT, prior=True, mean) + Patch-FPN + piSup + NoPrompt
+CKPT_F2d3M="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_No_L2_mean/20251214_0011/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_No_L2_mean/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2d3M="/root/tqdm/configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_No_L2_mean.py"
+ 
+# F2d-mean: 224 + EVA02 + SNE(OT, prior=True, mean) + Patch-FPN + piSup + NoPrompt
+CKPT_F2d4M="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean/20251214_0009/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2d4M="/root/tqdm/configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean.py"
+
+# F2d-mean-prob: 224 + EVA02 + SNE(OT, prior=prob, mean) + Patch-FPN + piSup + NoPrompt
+CKPT_F2d4MP="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob/20251214_1005/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2d4MP="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob.py"
+
+# F2d-mean-prob-softunion: 224 + EVA02 + SNE(OT, prior=prob, softunion, mean) + Patch-FPN + piSup + NoPrompt
+CKPT_F2d4MPU="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion/20251214_1032/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2d4MPU="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion.py"
+
 # F2d-xsam: 224 + EVA02 + SNE(OT, prior=True) + Patch-FPN(PixelSampling) + piSup + NoPrompt
 CKPT_F2dXSAM="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_xsam_pisup_noprompt/20251212_1850/exp_224_eva02_sneotTrue_patchfpn_xsam_pisup_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2dXSAM="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_xsam_pisup_noprompt.py"
+
+# F2p-max-cos: 224 + EVA02 + SNE(OT, prior=True, cos, max) + Patch-FPN + piSup + Prompt
+CKPT_F2pMAX="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_max/20251214_2027/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_max/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pMAX="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_max.py"
+
+# F2p-mean-cos: 224 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_F2pMEAN="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pMEAN="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
+
+# F2p-mean-prob-soft: 224 + EVA02 + SNE(OT, prior=prob, cos, mean, softunion) + Patch-FPN + piSup + Prompt
+CKPT_F2pMEANP="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pMEANP="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion.py"
+
+# G2p-mean-cos: 512 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_G2pMEAN="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/20251214_2025/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_G2pMEAN="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
+
+# G3p-mean-cos: 512 + DenseVLM + SNE(OT, prior=True, cos, mean) + Prompt
+CKPT_G3pMEAN="/root/tqdm/work_dirs/ablation_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/20251214_2026/exp_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_G3pMEAN="/root/tqdm/configs/ablation/exp_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
+
+# A1-backbone-proj: 224 + EVA02 + SNE(backbone-proj) + NoPrompt
+CKPT_A1BPROJ="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneProj_noprompt/exp_224_eva02_sneBackboneProj_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_A1BPROJ="configs/ablation/exp_224_eva02_sneBackboneProj_noprompt.py"
+
+# A1-backbone-proj-regE0: 224 + EVA02 + SNE(backbone-proj) + NoPrompt + reg_E0 eval
+CKPT_A1BPROJREGEVAL="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneProj_noprompt_regE0eval/20251214_2149/exp_224_eva02_sneBackboneProj_noprompt_regE0eval/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_A1BPROJREGEVAL="configs/ablation/exp_224_eva02_sneBackboneProj_noprompt_regE0eval.py"
+
+CKPT_A1BPROJREGEVALTEXTEVAL="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneProj_noprompt_regE0eval_textEncodereval/exp_224_eva02_sneBackboneProj_noprompt_regE0eval/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_A1BPROJREGEVALTEXTEVAL="configs/ablation/exp_224_eva02_sneBackboneProj_noprompt_regE0eval.py"
+
+# A1-backbone-cross: 224 + EVA02 + SNE(backbone-cross_attn) + NoPrompt
+CKPT_A1BCROSS="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneCrossAttn_noprompt/exp_224_eva02_sneBackboneCrossAttn_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_A1BCROSS="configs/ablation/exp_224_eva02_sneBackboneCrossAttn_noprompt.py"
+
+# A1-pixel-proj: 224 + EVA02 + SNE(pixel-proj) + NoPrompt
+CKPT_A1PPIX="/root/tqdm/work_dirs/ablation_224_eva02_snePixelProj_noprompt/exp_224_eva02_snePixelProj_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_A1PPIX="configs/ablation/exp_224_eva02_snePixelProj_noprompt.py"
+
+# H1p-mean-cos: 224 + DenseVLM + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_H1pMEAN="/root/tqdm/work_dirs/ablation_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_H1pMEAN="configs/ablation/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
 
 # ============================================================================
 
@@ -136,9 +198,32 @@ run_test() {
 # run_test "F2b" "$CONFIG_F2b" "$CKPT_F2b"
 # run_test "F2c" "$CONFIG_F2c" "$CKPT_F2c"
 # run_test "F2d" "$CONFIG_F2d" "$CKPT_F2d"  # pi 监督版 Patch-FPN（补齐 CKPT 后取消注释）
-run_test "F2d1" "$CONFIG_F2d1" "$CKPT_F2d1"
-run_test "F2d2" "$CONFIG_F2d2" "$CKPT_F2d2"
-run_test "F2d3" "$CONFIG_F2d3" "$CKPT_F2d3"
+# run_test "F2d1" "$CONFIG_F2d1" "$CKPT_F2d1"
+# run_test "F2d2" "$CONFIG_F2d2" "$CKPT_F2d2"
+# run_test "F2d3" "$CONFIG_F2d3" "$CKPT_F2d3"
+# run_test "F2d4" "$CONFIG_F2d4" "$CKPT_F2d4"
+# run_test "F2d3M" "$CONFIG_F2d3M" "$CKPT_F2d3M"
+# run_test "F2d4M" "$CONFIG_F2d4M" "$CKPT_F2d4M"
+# run_test "F2d4MP" "$CONFIG_F2d4MP" "$CKPT_F2d4MP"
+# run_test "F2d4MPU" "$CONFIG_F2d4MPU" "$CKPT_F2d4MPU"
+
+run_test "F2pMAX" "$CONFIG_F2pMAX" "$CKPT_F2pMAX"
+run_test "F2pMEAN" "$CONFIG_F2pMEAN" "$CKPT_F2pMEAN"
+run_test "F2pMEANP" "$CONFIG_F2pMEANP" "$CKPT_F2pMEANP"
+run_test "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
+run_test "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
+
+# run_test "G3pMEAN" "$CONFIG_G3pMEAN" "$CKPT_G3pMEAN"
+# run_test "A1BPROJ" "$CONFIG_A1BPROJ" "$CKPT_A1BPROJ"
+# run_test "A1BPROJREGEVAL" "$CONFIG_A1BPROJREGEVAL" "$CKPT_A1BPROJREGEVAL"
+# run_test "A1BPROJREGEVALTEXTEVAL" "$CONFIG_A1BPROJREGEVALTEXTEVAL" "$CKPT_A1BPROJREGEVALTEXTEVAL"
+# run_test "A1BCROSS" "$CONFIG_A1BCROSS" "$CKPT_A1BCROSS"
+# run_test "A1PPIX" "$CONFIG_A1PPIX" "$CKPT_A1PPIX"
+
+
+
+# run_test "F2d-mean" "$CONFIG_F2dM" "$CKPT_F2dM"
+# run_test "F2d-mean-cos" "$CONFIG_F2dMC" "$CKPT_F2dMC"
 # run_test "F2d-xsam" "$CONFIG_F2dXSAM" "$CKPT_F2dXSAM"  # PixelSampling Patch-FPN + pi 监督
 # run_test "F2d" "$CONFIG_F2d" "$CKPT_F2d"  # 默认先跑 conv 版，替换 CKPT 后任选
 

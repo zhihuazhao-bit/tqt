@@ -1,19 +1,12 @@
 """
-消融实验 F2c+pi: SNE + OT 融合 (有先验) + Patch-FPN + pi 深监督 (EVA02 权重, ORFD)
-- 尺寸: 224x224
-- 权重: EVA02_CLIP_B (原始)
-- SNE: 有 (backbone-ot) - 使用最优传输融合
-- Prompt: 无
-- OT Prior: True (使用预测图分配文本分布权重)
-- Patch-FPN: True (在 segmentor 重建金字塔)
-- Pi Supervision: True (对 OT 传输计划进行分割掩码监督)
-
-对比实验: F2c (patch_fpn=True, pi_supervision=False) vs F2c+pi (本配置)
+Ablation A1: EVA02 backbone SNE proj, 224x224, no prompt; force_reg_e0_eval=True.
 """
+
 _base_ = [
     '../_base_/default_runtime.py',
-    '../_base_/schedules/schedule_5k.py',
-    '../_base_/datasets/orfd2orfd-224.py']
+    '../_base_/schedules/schedule_1k.py',
+    '../_base_/datasets/orfd2orfd-224.py'
+]
 
 per_gpu = 16
 data = dict(samples_per_gpu=per_gpu, workers_per_gpu=per_gpu)
@@ -24,21 +17,14 @@ class_thing_num = 0
 class_stuff_num = 2
 img_size = (224, 224)
 
-# ============================================================================
-# 消融配置
-# ============================================================================
+# Ablation switches
 model_name = 'EVA02-CLIP-B-16'
-pretrained_weight = 'weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt'  # EVA02 原始权重
-use_sne = True                # ✅ 启用 SNE
-sne_fusion_stage = 'backbone' # backbone 阶段融合 (在 segmentor 中)
-sne_fusion_mode = 'ot'        # ✅ 最优传输融合
-ot_use_score_prior = True     # ✅ 使用预测图分配文本分布权重
-ot_cost_type = 'cos'
-ot_fuse_output = False
+pretrained_weight = 'weight/pretrained/EVA02_CLIP_B_psz16_s8B.pt'
+use_sne = True
+sne_fusion_stage = 'backbone'
+sne_fusion_mode = 'proj'
 prompt_cls = False
-patch_fpn = True              # ✅ 启用 patch-based FPN 重建
-supervise_ot_pi = True        # ✅ 对 OT 传输计划 pi 做分割掩码深监督
-# ============================================================================
+force_reg_e0_eval = True
 
 _model_dim_map = {
     'EVA01-CLIP-B-16':     {'visual': 768,  'text': 512},
@@ -49,11 +35,15 @@ _model_dim_map = {
 visual_feature_dim = _model_dim_map[model_name]['visual']
 text_feature_dim = _model_dim_map[model_name]['text']
 use_sne_pixel = use_sne and (sne_fusion_stage == 'pixel')
-decoder_dim = visual_feature_dim * 2 if (sne_fusion_stage == 'backbone' and sne_fusion_mode == 'concat') else visual_feature_dim
+decoder_dim = (
+    visual_feature_dim * 2
+    if (sne_fusion_stage == 'backbone' and sne_fusion_mode == 'concat')
+    else visual_feature_dim
+)
 
 import time
 _timestamp = time.strftime('%Y%m%d_%H%M')
-exp_name = 'ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos'
+exp_name = 'ablation_224_eva02_sneBackboneProj_noprompt_regE0eval'
 
 model = dict(
     type='tqt_EVA_CLIP',
@@ -66,11 +56,8 @@ model = dict(
     use_sne=use_sne,
     sne_fusion_stage=sne_fusion_stage,
     sne_fusion_mode=sne_fusion_mode,
-    ot_use_score_prior=ot_use_score_prior,
-    ot_cost_type=ot_cost_type,
-    ot_fuse_output=ot_fuse_output,
-    patch_fpn=patch_fpn,
-    supervise_ot_pi=supervise_ot_pi,
+    force_reg_e0_eval=force_reg_e0_eval,
+
     eva_clip=dict(
         model_name=model_name,
         pretrained=pretrained_weight,
@@ -78,7 +65,8 @@ model = dict(
         image_size=img_size,
         out_indices=[3, 5, 7, 11],
         context_length=32,
-        xattn=True),
+        xattn=True,
+    ),
     context_decoder=dict(
         type='ContextDecoder',
         transformer_width=256,
@@ -87,7 +75,8 @@ model = dict(
         visual_dim=text_feature_dim,
         dropout=0.1,
         outdim=text_feature_dim,
-        style='pytorch'),
+        style='pytorch',
+    ),
     decode_head=dict(
         type='tqtHead',
         in_channels=[decoder_dim, decoder_dim, decoder_dim, decoder_dim],
@@ -124,7 +113,8 @@ model = dict(
                             dropout=0.0,
                             batch_first=False,
                             norm_cfg=None,
-                            init_cfg=None),
+                            init_cfg=None,
+                        ),
                         dict(
                             type='MultiheadAttention',
                             embed_dims=256,
@@ -132,7 +122,8 @@ model = dict(
                             attn_drop=0.0,
                             proj_drop=0.0,
                             dropout_layer=None,
-                            batch_first=False)
+                            batch_first=False,
+                        ),
                     ],
                     ffn_cfgs=dict(
                         embed_dims=256,
@@ -141,16 +132,33 @@ model = dict(
                         act_cfg=dict(type='ReLU', inplace=True),
                         ffn_drop=0.0,
                         dropout_layer=None,
-                        add_identity=True),
-                    feedforward_channels=visual_feature_dim*2,
-                    operation_order=('self_attn', 'norm', 'cross_attn', 'norm', 'ffn', 'norm')),
-                init_cfg=None),
+                        add_identity=True,
+                    ),
+                    feedforward_channels=visual_feature_dim * 2,
+                    operation_order=(
+                        'self_attn',
+                        'norm',
+                        'cross_attn',
+                        'norm',
+                        'ffn',
+                        'norm',
+                    ),
+                ),
+                init_cfg=None,
+            ),
             positional_encoding=dict(
-                type='SinePositionalEncoding', num_feats=128, normalize=True),
-            init_cfg=None),
+                type='SinePositionalEncoding',
+                num_feats=128,
+                normalize=True,
+            ),
+            init_cfg=None,
+        ),
         enforce_decoder_input_project=False,
         positional_encoding=dict(
-            type='SinePositionalEncoding', num_feats=128, normalize=True),
+            type='SinePositionalEncoding',
+            num_feats=128,
+            normalize=True,
+        ),
         transformer_decoder=dict(
             type='DetrTransformerDecoder',
             return_intermediate=True,
@@ -164,29 +172,42 @@ model = dict(
                     attn_drop=0.0,
                     proj_drop=0.0,
                     dropout_layer=None,
-                    batch_first=False),
+                    batch_first=False,
+                ),
                 ffn_cfgs=dict(
                     embed_dims=256,
-                    feedforward_channels=visual_feature_dim*2,
+                    feedforward_channels=visual_feature_dim * 2,
                     num_fcs=2,
                     act_cfg=dict(type='ReLU', inplace=True),
                     ffn_drop=0.0,
                     dropout_layer=None,
-                    add_identity=True),
-                feedforward_channels=visual_feature_dim*2,
-                operation_order=('cross_attn', 'norm', 'self_attn', 'norm', 'ffn', 'norm')),
-            init_cfg=None),
+                    add_identity=True,
+                ),
+                feedforward_channels=visual_feature_dim * 2,
+                operation_order=(
+                    'cross_attn',
+                    'norm',
+                    'self_attn',
+                    'norm',
+                    'ffn',
+                    'norm',
+                ),
+            ),
+            init_cfg=None,
+        ),
         loss_cls=dict(
             type='CrossEntropyLoss',
             use_sigmoid=False,
             loss_weight=2.0,
             reduction='mean',
-            class_weight=[1.0] * class_num + [0.1]),
+            class_weight=[1.0] * class_num + [0.1],
+        ),
         loss_mask=dict(
             type='CrossEntropyLoss',
             use_sigmoid=True,
             reduction='mean',
-            loss_weight=5.0),
+            loss_weight=5.0,
+        ),
         loss_dice=dict(
             type='DiceLoss',
             use_sigmoid=True,
@@ -194,21 +215,25 @@ model = dict(
             reduction='mean',
             naive_dice=True,
             eps=1.0,
-            loss_weight=5.0),
+            loss_weight=5.0,
+        ),
         train_cfg=dict(
             num_points=12544,
             oversample_ratio=3.0,
             importance_sample_ratio=0.75,
             assigner=dict(type='IdentityAssigner', num_cls=class_num),
-            sampler=dict(type='MaskPseudoSampler')),
+            sampler=dict(type='MaskPseudoSampler'),
+        ),
         test_cfg=dict(
             panoptic_on=True,
             semantic_on=False,
             instance_on=True,
             max_per_image=100,
             iou_thr=0.8,
-            filter_low_score=True),
-        text_proj=dict(text_in_dim=text_feature_dim, text_out_dim=256)),
+            filter_low_score=True,
+        ),
+        text_proj=dict(text_in_dim=text_feature_dim, text_out_dim=256),
+    ),
     identity_head=dict(
         type='IdentityHead',
         in_channels=1,
@@ -216,43 +241,31 @@ model = dict(
         num_classes=1,
         dropout_ratio=0.1,
         align_corners=False,
-        loss_decode=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.)),
+        loss_decode=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+    ),
     train_cfg=dict(
-        # 训练可视化：每 1000 iters 记录 5 次，仅上传 SwanLab，不落本地
-        img_sne_save_path=None,
-        debug_vis=dict(
-            max_samples=5,
-            interval=1000,
-            save_debug=True,
-            output_dir=None,
-        ),
+        img_sne_save_path=f'./work_dirs/{exp_name}/{_timestamp}/sne/',
     ),
     test_cfg=dict(
         mode='whole',
         crop_size=(512, 512),
         stride=(341, 341),
         return_attn=return_attn,
-        attn_save_dir=f'./work_dirs/{exp_name}/{_timestamp}/attns/'))
+        attn_save_dir=f'./work_dirs/{exp_name}/{_timestamp}/attns/',
+    ),
+)
 
 optimizer = dict(
-    type='AdamW', lr=1e-5, weight_decay=1e-4,
+    type='AdamW',
+    lr=1e-5,
+    weight_decay=1e-4,
     paramwise_cfg=dict(
         custom_keys={
             'backbone': dict(lr_mult=0.1),
             'text_encoder': dict(lr_mult=0.0),
-            'norm': dict(decay_mult=0.)}))
+            'norm': dict(decay_mult=0.0),
+        }
+    ),
+)
 
 work_dir = f'./work_dirs/{exp_name}/{_timestamp}'
-
-# 自定义钩子：把 runner.iter 写回模型，用于训练时可视化采样的迭代控制
-custom_hooks = [
-    dict(type='SetIterHook', priority='VERY_HIGH'),
-    dict(
-        type='SaveTrainVisHook',
-        priority='HIGH',
-        interval=100,
-        max_samples=50,
-        save_debug=True,
-        output_dir=None,
-    ),
-]

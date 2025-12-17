@@ -97,11 +97,22 @@ class OTFeatureAligner(nn.Module):
     
     支持使用 score map 来初始化文本分布，使 OT 对齐更符合实际类别比例。
     """
-    def __init__(self, dim, eps=0.05, use_score_prior=True, fuse_output=True, cost_type='cos'):
+    def __init__(
+        self,
+        dim,
+        eps=0.05,
+        use_score_prior=True,
+        fuse_output=True,
+        cost_type='cos',
+        score_prior_mode='argmax',
+        score_prior_temperature=1.0,
+    ):
         super().__init__()
         self.sinkhorn = SinkhornDistance(eps=eps, max_iter=50, cost_type=cost_type)
         self.use_score_prior = use_score_prior
         self.fuse_output = fuse_output  # True: 返回融合后的残差输出；False: 仅返回对齐特征
+        self.score_prior_mode = score_prior_mode  # 'argmax' 使用原有 one-hot 统计，'prob' 使用 softmax 概率质量
+        self.score_prior_temperature = score_prior_temperature
         # 可选：映射后的特征融合层
         self.fusion = nn.Linear(dim * 2, dim) 
         self.norm = nn.LayerNorm(dim)
@@ -125,7 +136,7 @@ class OTFeatureAligner(nn.Module):
         # 计算文本分布先验 (基于 score map)
         nu_prior = None
         if self.use_score_prior and score_map is not None:
-            nu_prior = self._compute_nu_from_score_map(score_map)
+            nu_prior = self._compute_nu(score_map, mode=self.score_prior_mode, temperature=self.score_prior_temperature)
         
         # 1. 计算 OT 距离和传输计划 pi
         ot_loss, pi = self.sinkhorn(source_feat, target_feat_matrix, nu_prior=nu_prior)
@@ -160,34 +171,35 @@ class OTFeatureAligner(nn.Module):
         out = self.norm(self.fusion(torch.cat([source_feat, aligned_feat], dim=-1)))
         return out, ot_loss, pi
 
-    def _compute_nu_from_score_map(self, score_map):
+    def _compute_nu(self, score_map, mode=None, temperature=None):
+        """统一计算文本分布先验。
+
+        mode='argmax' 使用 one-hot 计数，mode='prob' 使用 softmax 概率质量。
+        temperature 仅在 prob 模式下生效。
         """
-        从 score map 计算文本分布先验。
-        
-        通过 argmax 得到每个像素的预测类别，然后统计各类别的像素数量比例。
-        
-        Args:
-            score_map: [B, K, H, W] 每个类别的相似度图
-        
-        Returns:
-            nu: [B, K] 归一化的类别分布（各类别像素数量比例）
-        """
+        mode = mode or self.score_prior_mode
+        temperature = temperature or self.score_prior_temperature
         B, K, H, W = score_map.shape
-        
-        # 1. argmax 得到每个像素的预测类别
-        pred_classes = score_map.argmax(dim=1)  # [B, H, W]
-        pred_flat = pred_classes.view(B, -1)     # [B, HW]
-        
-        # 2. 使用 one_hot + sum 统计各类别像素数量
-        # one_hot: [B, HW] -> [B, HW, K]
-        one_hot = F.one_hot(pred_flat, num_classes=K).float()  # [B, HW, K]
-        class_counts = one_hot.sum(dim=1)  # [B, K] ← 这里是对 HW 维度求和，统计每个类别的像素数
-        
-        # 3. 归一化使其和为 1
-        nu = class_counts / (class_counts.sum(dim=1, keepdim=True) + 1e-8)
-        
-        # 4. 添加平滑，避免某个类别像素数为 0
+
+        if mode == 'prob':
+            probs = F.softmax(score_map / temperature, dim=1)
+            class_mass = probs.sum(dim=(2, 3))  # [B, K]
+        else:  # 默认 argmax
+            pred_classes = score_map.argmax(dim=1)          # [B, H, W]
+            pred_flat = pred_classes.view(B, -1)            # [B, HW]
+            one_hot = F.one_hot(pred_flat, num_classes=K).float()  # [B, HW, K]
+            class_mass = one_hot.sum(dim=1)                 # [B, K]
+
+        # 归一化 + 平滑
+        total_mass = class_mass.sum(dim=1, keepdim=True) + 1e-8
+        nu = class_mass / total_mass
         nu = nu + 1e-6
         nu = nu / nu.sum(dim=1, keepdim=True)
-        
         return nu
+
+    # 保留向后兼容的接口
+    def get_distribution_from_prob(self, score_map, temperature=1.0):
+        return self._compute_nu(score_map, mode='prob', temperature=temperature)
+
+    def _compute_nu_from_score_map(self, score_map):
+        return self._compute_nu(score_map, mode='argmax', temperature=self.score_prior_temperature)

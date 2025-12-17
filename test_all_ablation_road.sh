@@ -56,6 +56,30 @@ CONFIG_F2a="configs/ablation_road/exp_224_eva02_sneotFalse_noprompt_road.py"
 CKPT_F2b=""  # TODO: 填入 checkpoint 路径
 CONFIG_F2b="configs/ablation_road/exp_224_eva02_sneotTrue_noprompt_road.py"
 
+# F2p-mean-cos: 224 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_F2p_mean_cos="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/20251215_1728/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2p_mean_cos="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road.py"
+
+# F2p-mean-cos-512: 512 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_F2p_mean_cos_512="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/20251216_1157/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2p_mean_cos_512="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road.py"
+
+# F2p-mean-prob-soft: 224 + EVA02 + SNE(OT, prior=prob+softunion, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_F2p_mean_prob_soft="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/20251215_1727/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2p_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road.py"
+
+# F2p-mean-prob-soft-512: 512 + EVA02 + SNE(OT, prior=prob+softunion, cos, mean) + Patch-FPN + piSup + Prompt
+CKPT_F2p_mean_prob_soft_512="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/20251216_1157/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2p_mean_prob_soft_512="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road.py"
+
+# F2c+pi-mean-cos: 224 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup (NoPrompt)
+CKPT_F2c_pi_mean_cos="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road/20251215_1727/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2c_pi_mean_cos="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road.py"
+
+# F2c+pi-mean-cos-prob-softunion: 224 + EVA02 + SNE(OT, prior=prob+softunion, cos, mean) + Patch-FPN + piSup (NoPrompt)
+CKPT_F2c_pi_mean_prob_soft="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road/20251215_1726/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2c_pi_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road.py"
+
 # ============================================================================
 
 echo "=========================================="
@@ -108,6 +132,14 @@ run_test() {
 # run_test "F1b" "$CONFIG_F1b" "$CKPT_F1b"
 # run_test "F2a" "$CONFIG_F2a" "$CKPT_F2a"
 # run_test "F2b" "$CONFIG_F2b" "$CKPT_F2b"
+# run_test "F2p-mean-cos" "$CONFIG_F2p_mean_cos" "$CKPT_F2p_mean_cos"
+# run_test "F2p-mean-cos-512" "$CONFIG_F2p_mean_cos_512" "$CKPT_F2p_mean_cos_512"
+# run_test "F2p-mean-prob-soft" "$CONFIG_F2p_mean_prob_soft" "$CKPT_F2p_mean_prob_soft"
+# run_test "F2p-mean-prob-soft-512" "$CONFIG_F2p_mean_prob_soft_512" "$CKPT_F2p_mean_prob_soft_512"
+# run_test "F2c+pi-mean-cos" "$CONFIG_F2c_pi_mean_cos" "$CKPT_F2c_pi_mean_cos"
+# run_test "F2c+pi-mean-cos-prob-softunion" "$CONFIG_F2c_pi_mean_prob_soft" "$CKPT_F2c_pi_mean_prob_soft"
+run_test "CKPT_F2p_mean_cos_512" "$CONFIG_F2p_mean_cos_512" "$CKPT_F2p_mean_cos_512"
+run_test "CKPT_F2p_mean_prob_soft_512" "$CONFIG_F2p_mean_prob_soft_512" "$CKPT_F2p_mean_prob_soft_512"
 
 echo ""
 echo "=========================================="

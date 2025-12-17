@@ -110,6 +110,11 @@ def train_segmentor(model,
                                    cfg.checkpoint_config, cfg.log_config,
                                    cfg.get('momentum_config', None))
 
+    # register custom hooks (e.g., SetIterHook for train-time visuals)
+    if cfg.get('custom_hooks', None):
+        for hook_cfg in cfg.custom_hooks:
+            runner.register_hook_from_cfg(hook_cfg)
+
     # an ugly walkaround to make the .log and .log.json filenames the same
     runner.timestamp = timestamp
 

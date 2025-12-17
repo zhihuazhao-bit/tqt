@@ -27,7 +27,7 @@ class ORFDDataset(CustomDataset):
     CLASSES = ('Vehicle-accessible areas', 'High-risk terrain blocks')
     PALETTE = [[0,0,0],[0,128,0]]
 
-    def __init__(self, **kwargs):
+    def __init__(self, force_scene_list=None, **kwargs):
         assert kwargs.get('split') in [None, 'train']
         if kwargs.get('class_names') is not None:
             self.CLASSES = kwargs.get('class_names')
@@ -119,6 +119,15 @@ class ORFDDataset(CustomDataset):
         for s in self.scene_scope:
             assert s in self.all_scene_map.keys(), f"scene_scope should be in {self.all_scene_map.keys()}"
             self.all_scene.extend(self.all_scene_map[s])
+        # 允许通过 force_scene_list 在推理时显式指定场景集合（例如只跑部分场景）
+        if force_scene_list is not None:
+            if isinstance(force_scene_list, (list, tuple)):
+                self.all_scene = list(force_scene_list)
+            elif isinstance(force_scene_list, str):
+                # 兼容单字符串逗号分隔的配置写法
+                self.all_scene = [x.strip() for x in force_scene_list.split(',') if x.strip()]
+            else:
+                raise ValueError('force_scene_list must be list/tuple or comma-separated string')
         # self.all_scene = [
         #     # '0602-1107',  # 森林未铺装道路，晴天、白天
         #     # '0613-1507-2' # 数据标注有问题
@@ -129,7 +138,7 @@ class ORFDDataset(CustomDataset):
         #     '2021-0403-1744', 
         #     '0602-1107', '2021-0222-1743', '2021-0403-1858'
         # ]
-        self.all_scene = ['0609-1923', '2021-0223-1756']
+        # self.all_scene = ['0609-1923', '2021-0223-1756']
         # self.all_scene = ['2021-0223-1756']
         
         print_log(f"Classes: {self.CLASSES}")

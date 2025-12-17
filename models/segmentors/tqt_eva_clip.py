@@ -35,7 +35,9 @@ TQT-EVA-CLIP 分割模型
 
 import copy
 import json
+import itertools
 import os
+from pathlib import Path
 
 import swanlab
 import torch
@@ -206,6 +208,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         identity_head=None,
         visual_reg=True,
         textual_reg=True,
+        force_reg_e0_eval=True,
         train_cfg=None,
         test_cfg=None,
         init_cfg=None,
@@ -218,9 +221,14 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         sne_fusion_mode='proj',           # 3. 融合方式: 'proj' / 'add' / 'cross_attn' / 'ot'
         use_ot_align=False,               # 4. 是否使用 OT 对齐 (img/sne -> text)
         ot_use_score_prior=True,          # 5. OT 是否使用预测图来分配文本分布权重
+        ot_score_prior_mode='argmax',     # 5.1 OT 文本先验模式: 'argmax' / 'prob'
+        ot_score_prior_temperature=1.0,   # 5.2 OT prob 模式的温度系数
         ot_cost_type='cos',               # 6. OT 成本矩阵计算方式: 'cos' 或 'l2'
         ot_fuse_output=True,              # 7. OTFeatureAligner 输出是否做残差融合
+        ot_fuse_mode='proj',              # 8. OT 融合方式: 'proj' / 'mean'
+        ot_softunion=False,               # 9. 是否在 score_map 上做 soft union 融合
         prompt_cls=False,                 # 6. 是否使用动态场景感知提示
+        prompt_cls_mode='hard',           # 6.1 动态提示模式: 'hard' (argmax) / 'soft' (weighted sum)
         use_context_decoder=True,         # 6. 是否使用 context decoder
         use_learnable_prompt=True,        # 7. 是否使用可学习 prompt prefix
         **args
@@ -250,9 +258,14 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.sne_fusion_mode = sne_fusion_mode
         self.use_ot_align = use_ot_align
         self.ot_use_score_prior = ot_use_score_prior
+        self.ot_score_prior_mode = ot_score_prior_mode
+        self.ot_score_prior_temperature = ot_score_prior_temperature
         self.ot_cost_type = ot_cost_type
         self.ot_fuse_output = ot_fuse_output
+        self.ot_fuse_mode = ot_fuse_mode
+        self.ot_softunion = ot_softunion
         self.prompt_cls = prompt_cls
+        self.prompt_cls_mode = prompt_cls_mode
         self.use_context_decoder = use_context_decoder
         self.use_learnable_prompt = use_learnable_prompt
         self.visual_dim = visual_dim
@@ -260,11 +273,24 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.patch_fpn_xsam = patch_fpn_xsam
         self.patch_fpn = patch_fpn or patch_fpn_xsam
         self.supervise_ot_pi = supervise_ot_pi
+        self.force_reg_e0_eval = force_reg_e0_eval
+        self._reg_e0_eval_logged = False
+        self.is_deploy = False
+
+        # 训练阶段可选的可视化/调试开关
+        train_debug_cfg = train_cfg.get('debug_vis', {}) if isinstance(train_cfg, dict) else {}
+        self.train_debug_max = int(train_debug_cfg.get('max_samples', 0))
+        self.train_debug_every = max(1, int(train_debug_cfg.get('interval', 1)))
+        self.train_debug_save_debug = bool(train_debug_cfg.get('save_debug', False))
+        self.train_debug_out_dir = train_debug_cfg.get('output_dir', None)
+        self._train_debug_seen = 0
 
         assert sne_fusion_stage in ['backbone', 'pixel'], \
             "sne_fusion_stage must be 'backbone' or 'pixel'"
         assert sne_fusion_mode in ['proj', 'add', 'concat', 'cross_attn', 'ot'], \
             "sne_fusion_mode must be 'proj', 'add', 'concat', 'cross_attn' or 'ot'"
+        assert ot_fuse_mode in ['proj', 'mean', 'max'], "ot_fuse_mode must be 'proj', 'mean' or 'max'"
+        assert ot_score_prior_mode in ['argmax', 'prob'], "ot_score_prior_mode must be 'argmax' or 'prob'"
 
         # 打印消融实验配置
         self._print_ablation_config()
@@ -323,10 +349,15 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             f"  use_ot_align:         {self.use_ot_align}\n"
             f"  ot_cost_type:         {self.ot_cost_type}\n"
             f"  ot_fuse_output:       {self.ot_fuse_output}\n"
+            f"  ot_score_prior_mode:  {self.ot_score_prior_mode}\n"
+            f"  ot_score_prior_temp:  {self.ot_score_prior_temperature}\n"
+            f"  ot_softunion:         {self.ot_softunion}\n"
             f"  prompt_cls:           {self.prompt_cls}\n"
+            f"  prompt_cls_mode:      {self.prompt_cls_mode}\n"
             f"  use_context_decoder:  {self.use_context_decoder}\n"
             f"  use_learnable_prompt: {self.use_learnable_prompt}\n"
             f"  supervise_ot_pi:      {self.supervise_ot_pi}\n"
+            f"  force_reg_e0_eval:    {self.force_reg_e0_eval}\n"
             f"{'='*60}"
         )
         print(config_str)
@@ -363,6 +394,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                     OTFeatureAligner(
                         visual_dim,
                         use_score_prior=self.ot_use_score_prior,
+                        score_prior_mode=self.ot_score_prior_mode,
+                        score_prior_temperature=self.ot_score_prior_temperature,
                         fuse_output=self.ot_fuse_output,
                         cost_type=self.ot_cost_type,
                     )
@@ -372,6 +405,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                     OTFeatureAligner(
                         visual_dim,
                         use_score_prior=self.ot_use_score_prior,
+                        score_prior_mode=self.ot_score_prior_mode,
+                        score_prior_temperature=self.ot_score_prior_temperature,
                         fuse_output=self.ot_fuse_output,
                         cost_type=self.ot_cost_type,
                     )
@@ -395,12 +430,16 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             self.opt_sne = OTFeatureAligner(
                 dim=text_dim,
                 use_score_prior=self.ot_use_score_prior,
+                score_prior_mode=self.ot_score_prior_mode,
+                score_prior_temperature=self.ot_score_prior_temperature,
                 fuse_output=self.ot_fuse_output,
                 cost_type=self.ot_cost_type,
             )
             self.opt_img = OTFeatureAligner(
                 dim=text_dim,
                 use_score_prior=self.ot_use_score_prior,
+                score_prior_mode=self.ot_score_prior_mode,
+                score_prior_temperature=self.ot_score_prior_temperature,
                 fuse_output=self.ot_fuse_output,
                 cost_type=self.ot_cost_type,
             )
@@ -582,10 +621,72 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         p4 = self.patch_merge1(base)
         return [p1, p2, p3, p4]
 
+    def switch_to_deploy(self):
+        """
+        切换到部署模式：预计算所有文本嵌入，并删除 Text Encoder 以节省资源。
+        """
+        if self.is_deploy:
+            return
+
+        print("Switching to deployment mode: Caching text embeddings...")
+        
+        # 确保处于评估模式
+        self.eval()
+        self.text_encoder.eval()
+        
+        with torch.no_grad():
+            # 1. 缓存属性锚点 (用于分类)
+            # self.cached_attr_embs: {'weather': [4, D], 'light': [3, D], ...}
+            if not hasattr(self, 'cached_attr_embs'):
+                self.cached_attr_embs = nn.ParameterDict()
+                
+            for name in ['weather', 'light', 'road']:
+                # 获取该属性下的所有类别文本和对应的 Prompt
+                tokens = self.attr_texts[name] 
+                prompt = getattr(self, f"{name}_prompt")
+                
+                # 编码并保存
+                embs = self.text_encoder(tokens, context=prompt)
+                # 注册为 buffer (不参与梯度更新，但在 state_dict 中)
+                self.register_buffer(f"cached_{name}_embs", embs)
+
+            # 2. 缓存 24 个组合原型 (用于分割)
+            # 生成 24 个 Token 组合
+            if not hasattr(self, 'all_combinations'):
+                self.all_combinations = list(itertools.product(
+                    self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
+                ))
+            
+            prompts = []
+            for w, l, r in self.all_combinations:
+                prompts.append(f"A {w} scene during {l} on a {r}, ")
+            
+            tokens = tokenize(prompts, context_length=self.context_length).to(next(self.parameters()).device)
+            
+            # 分别编码 Traversable 和 Notraversable
+            trav_embs = self.text_encoder(tokens, context=self.contexts_traversable)
+            notrav_embs = self.text_encoder(tokens, context=self.contexts_notraversable)
+            
+            # 拼接: [24, 2, D]
+            final_prototypes = torch.stack([trav_embs, notrav_embs], dim=1)
+            self.register_buffer("cached_prototypes", final_prototypes)
+
+        # 3. 删除 Text Encoder !!!
+        # 注意：这会破坏训练能力，仅用于推理
+        del self.text_encoder
+        if hasattr(self, 'text_encoder'): # 双重保险
+            self.text_encoder = None
+        
+        # 标记为部署模式
+        self.is_deploy = True
+        print("Text Encoder removed. Model is ready for inference.")
+
     def _generate_dynamic_text_embeddings(self, global_feat, b_size):
         """生成动态场景感知文本嵌入。
         
         根据图像特征预测天气/光照/路面属性，构建动态提示。
+        支持 'hard' (argmax) 和 'soft' (weighted sum) 两种模式。
+        支持 deploy 模式加速。
         
         Args:
             global_feat: 全局图像特征 [B, 1, C]
@@ -594,6 +695,43 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         Returns:
             tuple: (文本嵌入, 更新后的全局特征)
         """
+        # ==================== 部署模式 (极速推理) ====================
+        if self.is_deploy:
+            # 1. 计算属性概率 (使用缓存的 cached_attr_embs)
+            image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
+            attr_probs = {}
+            
+            # 用于返回给外部 (保持接口一致性，但不需要 gradient)
+            attr_embeddings_dummy = {} 
+            attr_logits_dummy = {}
+            
+            for name in ['weather', 'light', 'road']:
+                # 直接从 buffer 读取
+                embs = getattr(self, f"cached_{name}_embs") # [Num_Class, D]
+                attr_embeddings_dummy[name] = embs
+                
+                # 计算 logits
+                logits = torch.einsum('bc,nc->bn', image_feature, F.normalize(embs, dim=-1, p=2))
+                attr_logits_dummy[name] = logits
+                
+                # 计算概率
+                attr_probs[name] = F.softmax(logits / self.ot_score_prior_temperature, dim=1)
+
+            # 2. 计算联合概率 P(w,l,r) -> [B, 24]
+            # w: weather(4), l: light(3), r: road(2) -> wlr(24)
+            joint_probs = torch.einsum(
+                'bw,bl,br->bwlr', 
+                attr_probs['weather'], attr_probs['light'], attr_probs['road']
+            ).reshape(b_size, -1)
+
+            # 3. 加权求和 (使用缓存的 cached_prototypes)
+            # cached_prototypes: [24, 2, D] -> [B, 2, D]
+            text_embeddings = torch.einsum('bk,kcd->bcd', joint_probs, self.cached_prototypes)
+            
+            return text_embeddings, (global_feat, attr_embeddings_dummy, attr_logits_dummy)
+
+        # ==================== 训练/普通推理模式 ====================
+
         # 属性配置: (名称, 提示向量, 类别列表)
         attr_configs = [
             ('weather', self.weather_prompt, self.WEATHER_CLASSES),
@@ -604,11 +742,12 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         # 归一化图像特征
         image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
 
-        # 统一处理三个属性
         attr_embeddings = {}
         attr_logits = {}
-        attr_preds = {}
+        attr_preds = {} # for hard mode
+        attr_probs = {} # for soft mode
 
+        # 1. 属性分类 (Hard & Soft 共用)
         for name, prompt, classes in attr_configs:
             # 编码属性文本
             emb = self.text_encoder(
@@ -621,37 +760,89 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             logits = torch.einsum('bc,bnc->bn', image_feature, emb_norm)
             attr_logits[name] = logits
 
-            # 预测类别
-            attr_preds[name] = logits.argmax(dim=1)
+            if self.prompt_cls_mode == 'hard':
+                attr_preds[name] = logits.argmax(dim=1)
+            else: # soft
+                attr_probs[name] = F.softmax(logits / self.ot_score_prior_temperature, dim=1)
 
-        # 构建动态提示
-        tokenized_prompts = []
-        for i in range(b_size):
-            dynamic_prefix = (
-                f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
-                f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
-                f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]}, "
-            )
+        # 2. 生成文本嵌入
+        text_embeddings = None
+        
+        if self.prompt_cls_mode == 'hard':
+            # === Hard Mode (Argmax) ===
+            tokenized_prompts = []
+            for i in range(b_size):
+                dynamic_prefix = (
+                    f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
+                    f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
+                    f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]}, "
+                )
 
-            # 编码可通行/不可通行嵌入
-            trav_token = tokenize(
-                dynamic_prefix, context_length=self.context_length
-            ).to(global_feat.device)
-            trav_emb = self.text_encoder(trav_token, context=self.contexts_traversable)
+                # 编码可通行/不可通行嵌入
+                # 注意：这里实时 tokenize 会比较慢，但在 hard mode 下每张图 prompt 不一样，难以 batch
+                trav_token = tokenize(
+                    dynamic_prefix, context_length=self.context_length
+                ).to(global_feat.device)
+                trav_emb = self.text_encoder(trav_token, context=self.contexts_traversable)
 
-            notrav_token = tokenize(
-                dynamic_prefix, context_length=self.context_length
-            ).to(global_feat.device)
-            notrav_emb = self.text_encoder(notrav_token, context=self.contexts_notraversable)
+                notrav_token = tokenize(
+                    dynamic_prefix, context_length=self.context_length
+                ).to(global_feat.device)
+                notrav_emb = self.text_encoder(notrav_token, context=self.contexts_notraversable)
 
-            tokenized_prompts.append(
-                torch.cat([trav_emb, notrav_emb], dim=0)
-            )
+                tokenized_prompts.append(
+                    torch.cat([trav_emb, notrav_emb], dim=0)
+                )
+            text_embeddings = torch.stack(tokenized_prompts, dim=0)
+            
+        else:
+            # === Soft Mode (Weighted Sum) ===
+            # 1. 准备所有可能的属性组合
+            if not hasattr(self, 'all_combinations'):
+                self.all_combinations = list(itertools.product(
+                    self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
+                ))
+            
+            # 2. 计算每个组合的联合概率 [B, 24]
+            joint_probs = torch.einsum(
+                'bw,bl,br->bwlr', 
+                attr_probs['weather'], attr_probs['light'], attr_probs['road']
+            ).reshape(b_size, -1)
 
-        text_embeddings = torch.stack(tokenized_prompts, dim=0)
+            # 3. 编码所有 24 个原型句子 (Prototypes)
+            # 注意：由于 context 是 learnable 的，训练时需要在 forward 中实时计算
+            
+            # 缓存 tokenized tokens 以避免重复 tokenize
+            if not hasattr(self, 'all_combinations_tokens'):
+                prompts = []
+                for w, l, r in self.all_combinations:
+                    prompts.append(f"A {w} scene during {l} on a {r}, ")
+                self.all_combinations_tokens = tokenize(
+                    prompts, context_length=self.context_length
+                ).to(global_feat.device)
+            
+            # 确保 tokens 在正确的 device
+            if self.all_combinations_tokens.device != global_feat.device:
+                self.all_combinations_tokens = self.all_combinations_tokens.to(global_feat.device)
+
+            # 批量编码 24 个原型 [24, D]
+            prototypes_trav = self.text_encoder(self.all_combinations_tokens, context=self.contexts_traversable)
+            prototypes_notrav = self.text_encoder(self.all_combinations_tokens, context=self.contexts_notraversable)
+
+            # 4. 加权求和得到最终 Embedding
+            # [B, 24] x [24, D] -> [B, D]
+            final_trav_emb = torch.matmul(joint_probs, prototypes_trav)
+            final_notrav_emb = torch.matmul(joint_probs, prototypes_notrav)
+
+            # 拼接结果 [B, 2, D]
+            text_embeddings = torch.stack([final_trav_emb, final_notrav_emb], dim=1)
+
         updated_global_feat = (global_feat, attr_embeddings, attr_logits)
 
         return text_embeddings, updated_global_feat
+
+    def _is_primary_rank(self):
+        return (not torch.distributed.is_available()) or (not torch.distributed.is_initialized()) or torch.distributed.get_rank() == 0
 
     # =========================================================================
     # 可视化方法
@@ -725,6 +916,12 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
     # =========================================================================
 
     def forward_train(self, img, img_metas, gt_semantic_seg, **kwargs):
+        if self.force_reg_e0_eval:
+            self.reg_E0.eval()
+            self.text_encoder.eval()
+            if not self._reg_e0_eval_logged:
+                print("Reg_E0 set to eval mode during training.", self.reg_E0.training)
+                self._reg_e0_eval_logged = True
         """训练前向传播。"""
         losses = dict()
 
@@ -968,6 +1165,15 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                     sne_score_map, size=(h, w), mode='bilinear', align_corners=False
                 )
 
+            # 可选：在概率空间做 soft union，将融合后的 score_map 同时提供给 img/sne 分支
+            if self.ot_softunion and (scale_img_score_map is not None) and (scale_sne_score_map is not None):
+                probs_img = F.softmax(scale_img_score_map / self.ot_score_prior_temperature, dim=1)
+                probs_sne = F.softmax(scale_sne_score_map / self.ot_score_prior_temperature, dim=1)
+                probs_fused = torch.max(probs_img, probs_sne)
+                fused_score_map = torch.log(probs_fused.clamp(min=1e-8))
+                scale_img_score_map = fused_score_map
+                scale_sne_score_map = fused_score_map
+
             # OT 对齐 (img 和 sne 使用各自的 score_map 作为文本分布先验)
             new_x, loss_x, pi_img = self.img_attn[i](old_x, new_text, score_map=scale_img_score_map)
             new_sne, loss_sne, pi_sne = self.sne_attn[i](old_sne, new_text, score_map=scale_sne_score_map)
@@ -992,10 +1198,18 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                     pi_maps['img'].append(pi_img_map)
                     pi_maps['sne'].append(pi_sne_map)
 
-            # concat + proj 融合
-            fused = torch.cat([new_x, new_sne], dim=-1)
-            fused = fused.permute(0, 2, 1).contiguous().view(b, f * 2, h, w)
-            x_orig[i] = self.img_sne_proj[i](fused)
+            if self.ot_fuse_mode == 'proj':
+                fused = torch.cat([new_x, new_sne], dim=-1)
+                fused = fused.permute(0, 2, 1).contiguous().view(b, f * 2, h, w)
+                x_orig[i] = self.img_sne_proj[i](fused)
+            elif self.ot_fuse_mode == 'mean':  # mean fusion
+                fused = 0.5 * (new_x + new_sne)
+                fused = fused.permute(0, 2, 1).contiguous().view(b, f, h, w)
+                x_orig[i] = fused
+            elif self.ot_fuse_mode == 'max':
+                fused = torch.max(new_x, new_sne)
+                fused = fused.permute(0, 2, 1).contiguous().view(b, f, h, w)
+                x_orig[i] = fused
 
             losses.update(add_prefix({'loss': loss_x}, f'img_ot_{i}'))
             losses.update(add_prefix({'loss': loss_sne}, f'sne_ot_{i}'))

@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--show-dir', default=None, help='Directory to save visualizations (overrides output-dir).')
     parser.add_argument('--save-intermediate-dir', default='./attn', help='Directory to save intermediate tensors (score maps / OT pi).')
     parser.add_argument('--save-attn', default=True, help='Save attention weight matrices returned by the model.')
+    parser.add_argument('--force-scene-list', default="0609-1923,2021-0223-1756", help="Comma-separated scene ids to restrict inference (applies to test dataset only). Defaults to '0609-1923,2021-0223-1756'.")
     return parser.parse_args()
 
 
@@ -86,6 +87,12 @@ def compute_metrics(tp: int, fp: int, fn: int, tn: int) -> Dict[str, float]:
 def main() -> None:
     args = parse_args()
     cfg = Config.fromfile(args.config)
+
+    # 仅在推理时指定场景子集，不影响训练/验证配置
+    if args.force_scene_list is not None:
+        if not hasattr(cfg, 'data') or not hasattr(cfg.data, 'test'):
+            raise ValueError('config missing data.test, cannot set force_scene_list')
+        cfg.data.test.force_scene_list = args.force_scene_list
 
     def _enable_return_attn(cfg_obj):
         """开启注意力返回：调整 test_cfg 与 decode_head 关键开关，匹配配置文件里的 return_attn 逻辑。"""

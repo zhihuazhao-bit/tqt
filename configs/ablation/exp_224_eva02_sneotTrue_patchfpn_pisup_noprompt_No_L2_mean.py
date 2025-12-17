@@ -1,14 +1,15 @@
 """
-消融实验 F2c+pi: SNE + OT 融合 (有先验) + Patch-FPN + pi 深监督 (EVA02 权重, ORFD)
+消融实验 F2c+pi (mean): SNE + OT 融合 (有先验, mean 融合) + Patch-FPN + pi 深监督 (EVA02 权重, ORFD)
 - 尺寸: 224x224
 - 权重: EVA02_CLIP_B (原始)
 - SNE: 有 (backbone-ot) - 使用最优传输融合
 - Prompt: 无
 - OT Prior: True (使用预测图分配文本分布权重)
+- OT Fuse: mean (new)
 - Patch-FPN: True (在 segmentor 重建金字塔)
 - Pi Supervision: True (对 OT 传输计划进行分割掩码监督)
 
-对比实验: F2c (patch_fpn=True, pi_supervision=False) vs F2c+pi (本配置)
+对比实验: F2c+pi(proj) vs F2c+pi(mean)
 """
 _base_ = [
     '../_base_/default_runtime.py',
@@ -33,8 +34,9 @@ use_sne = True                # ✅ 启用 SNE
 sne_fusion_stage = 'backbone' # backbone 阶段融合 (在 segmentor 中)
 sne_fusion_mode = 'ot'        # ✅ 最优传输融合
 ot_use_score_prior = True     # ✅ 使用预测图分配文本分布权重
-ot_cost_type = 'cos'
+ot_cost_type = 'l2'
 ot_fuse_output = False
+ot_fuse_mode = 'mean'         # ✅ 使用 mean 融合（新增）
 prompt_cls = False
 patch_fpn = True              # ✅ 启用 patch-based FPN 重建
 supervise_ot_pi = True        # ✅ 对 OT 传输计划 pi 做分割掩码深监督
@@ -53,7 +55,7 @@ decoder_dim = visual_feature_dim * 2 if (sne_fusion_stage == 'backbone' and sne_
 
 import time
 _timestamp = time.strftime('%Y%m%d_%H%M')
-exp_name = 'ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos'
+exp_name = 'ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_No_L2_mean'
 
 model = dict(
     type='tqt_EVA_CLIP',
@@ -69,6 +71,7 @@ model = dict(
     ot_use_score_prior=ot_use_score_prior,
     ot_cost_type=ot_cost_type,
     ot_fuse_output=ot_fuse_output,
+    ot_fuse_mode=ot_fuse_mode,
     patch_fpn=patch_fpn,
     supervise_ot_pi=supervise_ot_pi,
     eva_clip=dict(
@@ -217,16 +220,7 @@ model = dict(
         dropout_ratio=0.1,
         align_corners=False,
         loss_decode=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.)),
-    train_cfg=dict(
-        # 训练可视化：每 1000 iters 记录 5 次，仅上传 SwanLab，不落本地
-        img_sne_save_path=None,
-        debug_vis=dict(
-            max_samples=5,
-            interval=1000,
-            save_debug=True,
-            output_dir=None,
-        ),
-    ),
+    train_cfg=dict(img_sne_save_path=f'./work_dirs/{exp_name}/{_timestamp}/sne/'),
     test_cfg=dict(
         mode='whole',
         crop_size=(512, 512),
@@ -244,7 +238,6 @@ optimizer = dict(
 
 work_dir = f'./work_dirs/{exp_name}/{_timestamp}'
 
-# 自定义钩子：把 runner.iter 写回模型，用于训练时可视化采样的迭代控制
 custom_hooks = [
     dict(type='SetIterHook', priority='VERY_HIGH'),
     dict(
