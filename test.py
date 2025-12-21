@@ -23,12 +23,12 @@ def parse_args():
     parser.add_argument(
         '--config', 
         # default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
-        default=r'configs/ablation/exp_224_densevlm_sneotTrue_noprompt.py',
+        default=r'configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
         # default='/root/tqdm/work_dirs/weights/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable/best_mIoU_iter_4000.pth',
-        default=r'/root/tqdm/work_dirs/ablation_224_densevlm_sneotTrue_noprompt/20251204_1724/exp_224_densevlm_sneotTrue_noprompt/best_mIoU_iter_1000.pth',
+        default=r'/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/20251217_1304/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/best_mIoU_iter_4000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')

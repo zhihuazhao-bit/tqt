@@ -8,6 +8,7 @@ import cv2
 import mmcv
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.distributed as dist
 from mmcv.runner import BaseModule, auto_fp16
 
@@ -166,6 +167,10 @@ class BaseSegmentor(BaseModule, metaclass=ABCMeta):
                 swanlab.log({'acc_weather': self.acc_weather})
             if hasattr(self, 'acc_light'):
                 swanlab.log({'acc_light': self.acc_light})
+            if hasattr(self, 'tau') and isinstance(self.tau, nn.Parameter):
+                swanlab.log({'tau': torch.mean(self.tau).item()})
+            if hasattr(self, 'ot_score_prior_temperature') and isinstance(self.ot_score_prior_temperature, nn.Parameter):
+                swanlab.log({'ot_score_prior_temperature': torch.mean(self.ot_score_prior_temperature).item()})
 
         return outputs
 

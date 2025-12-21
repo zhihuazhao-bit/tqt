@@ -105,21 +105,21 @@ class OTFeatureAligner(nn.Module):
         fuse_output=True,
         cost_type='cos',
         score_prior_mode='argmax',
-        score_prior_temperature=1.0,
+        # score_prior_temperature=1.0, # Removed
     ):
         super().__init__()
         self.sinkhorn = SinkhornDistance(eps=eps, max_iter=50, cost_type=cost_type)
         self.use_score_prior = use_score_prior
         self.fuse_output = fuse_output  # True: 返回融合后的残差输出；False: 仅返回对齐特征
         self.score_prior_mode = score_prior_mode  # 'argmax' 使用原有 one-hot 统计，'prob' 使用 softmax 概率质量
-        self.score_prior_temperature = score_prior_temperature
+        # self.score_prior_temperature = score_prior_temperature # Removed
         # 可选：映射后的特征融合层
         self.fusion = nn.Linear(dim * 2, dim) 
         self.norm = nn.LayerNorm(dim)
         # 仅保存一次可视化
         self._attn_saved = False
 
-    def forward(self, source_feat, target_feat_matrix, score_map=None, attn_save_path=None, attn_class_index=1):
+    def forward(self, source_feat, target_feat_matrix, score_map=None, attn_save_path=None, attn_class_index=1, temperature=1.0):
         """
         Args:
             source_feat: [B, HW, C] (Image or SNE)
@@ -127,6 +127,7 @@ class OTFeatureAligner(nn.Module):
             score_map: [B, K, H, W] 初步相似度图，用于计算类别比例作为 nu 先验
                        如果为 None 则使用均匀分布
             fuse_output: 通过构造参数控制；True 返回融合后的特征，False 返回对齐特征
+            temperature: 温度系数，默认为 1.0。
         
         Returns:
             out: 对齐特征或融合特征 [B, HW, C]
@@ -136,7 +137,7 @@ class OTFeatureAligner(nn.Module):
         # 计算文本分布先验 (基于 score map)
         nu_prior = None
         if self.use_score_prior and score_map is not None:
-            nu_prior = self._compute_nu(score_map, mode=self.score_prior_mode, temperature=self.score_prior_temperature)
+            nu_prior = self._compute_nu(score_map, mode=self.score_prior_mode, temperature=temperature)
         
         # 1. 计算 OT 距离和传输计划 pi
         ot_loss, pi = self.sinkhorn(source_feat, target_feat_matrix, nu_prior=nu_prior)
@@ -171,14 +172,14 @@ class OTFeatureAligner(nn.Module):
         out = self.norm(self.fusion(torch.cat([source_feat, aligned_feat], dim=-1)))
         return out, ot_loss, pi
 
-    def _compute_nu(self, score_map, mode=None, temperature=None):
+    def _compute_nu(self, score_map, mode=None, temperature=1.0):
         """统一计算文本分布先验。
 
         mode='argmax' 使用 one-hot 计数，mode='prob' 使用 softmax 概率质量。
         temperature 仅在 prob 模式下生效。
         """
         mode = mode or self.score_prior_mode
-        temperature = temperature or self.score_prior_temperature
+        # temperature = temperature or self.score_prior_temperature # Removed
         B, K, H, W = score_map.shape
 
         if mode == 'prob':
@@ -202,4 +203,4 @@ class OTFeatureAligner(nn.Module):
         return self._compute_nu(score_map, mode='prob', temperature=temperature)
 
     def _compute_nu_from_score_map(self, score_map):
-        return self._compute_nu(score_map, mode='argmax', temperature=self.score_prior_temperature)
+        return self._compute_nu(score_map, mode='argmax', temperature=1.0) # Default to 1.0

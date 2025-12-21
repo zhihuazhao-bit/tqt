@@ -229,6 +229,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         ot_softunion=False,               # 9. 是否在 score_map 上做 soft union 融合
         prompt_cls=False,                 # 6. 是否使用动态场景感知提示
         prompt_cls_mode='hard',           # 6.1 动态提示模式: 'hard' (argmax) / 'soft' (weighted sum)
+        prompt_cls_temperature_mode='ot_prior', # 6.2 动态提示温度模式: 'ot_prior' (默认) / 'tau'
         use_context_decoder=True,         # 6. 是否使用 context decoder
         use_learnable_prompt=True,        # 7. 是否使用可学习 prompt prefix
         **args
@@ -259,13 +260,20 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.use_ot_align = use_ot_align
         self.ot_use_score_prior = ot_use_score_prior
         self.ot_score_prior_mode = ot_score_prior_mode
-        self.ot_score_prior_temperature = ot_score_prior_temperature
+        
+        # 如果传入 None，则使用可学习的温度系数 (初始值 1.0)
+        if ot_score_prior_temperature is None:
+            self.ot_score_prior_temperature = nn.Parameter(torch.tensor(0.1))
+        else:
+            self.ot_score_prior_temperature = ot_score_prior_temperature
+            
         self.ot_cost_type = ot_cost_type
         self.ot_fuse_output = ot_fuse_output
         self.ot_fuse_mode = ot_fuse_mode
         self.ot_softunion = ot_softunion
         self.prompt_cls = prompt_cls
         self.prompt_cls_mode = prompt_cls_mode
+        self.prompt_cls_temperature_mode = prompt_cls_temperature_mode
         self.use_context_decoder = use_context_decoder
         self.use_learnable_prompt = use_learnable_prompt
         self.visual_dim = visual_dim
@@ -395,7 +403,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                         visual_dim,
                         use_score_prior=self.ot_use_score_prior,
                         score_prior_mode=self.ot_score_prior_mode,
-                        score_prior_temperature=self.ot_score_prior_temperature,
+                        # ot_score_prior_temperature=self.ot_score_prior_temperature, # Removed
                         fuse_output=self.ot_fuse_output,
                         cost_type=self.ot_cost_type,
                     )
@@ -406,7 +414,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                         visual_dim,
                         use_score_prior=self.ot_use_score_prior,
                         score_prior_mode=self.ot_score_prior_mode,
-                        score_prior_temperature=self.ot_score_prior_temperature,
+                        # ot_score_prior_temperature=self.ot_score_prior_temperature, # Removed
                         fuse_output=self.ot_fuse_output,
                         cost_type=self.ot_cost_type,
                     )
@@ -431,7 +439,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 dim=text_dim,
                 use_score_prior=self.ot_use_score_prior,
                 score_prior_mode=self.ot_score_prior_mode,
-                score_prior_temperature=self.ot_score_prior_temperature,
+                # score_prior_temperature=self.ot_score_prior_temperature, # Removed
                 fuse_output=self.ot_fuse_output,
                 cost_type=self.ot_cost_type,
             )
@@ -439,7 +447,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 dim=text_dim,
                 use_score_prior=self.ot_use_score_prior,
                 score_prior_mode=self.ot_score_prior_mode,
-                score_prior_temperature=self.ot_score_prior_temperature,
+                # score_prior_temperature=self.ot_score_prior_temperature, # Removed
                 fuse_output=self.ot_fuse_output,
                 cost_type=self.ot_cost_type,
             )
@@ -715,7 +723,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 attr_logits_dummy[name] = logits
                 
                 # 计算概率
-                attr_probs[name] = F.softmax(logits / self.ot_score_prior_temperature, dim=1)
+                attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
 
             # 2. 计算联合概率 P(w,l,r) -> [B, 24]
             # w: weather(4), l: light(3), r: road(2) -> wlr(24)
@@ -763,7 +771,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             if self.prompt_cls_mode == 'hard':
                 attr_preds[name] = logits.argmax(dim=1)
             else: # soft
-                attr_probs[name] = F.softmax(logits / self.ot_score_prior_temperature, dim=1)
+                attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
 
         # 2. 生成文本嵌入
         text_embeddings = None
@@ -1175,8 +1183,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 scale_sne_score_map = fused_score_map
 
             # OT 对齐 (img 和 sne 使用各自的 score_map 作为文本分布先验)
-            new_x, loss_x, pi_img = self.img_attn[i](old_x, new_text, score_map=scale_img_score_map)
-            new_sne, loss_sne, pi_sne = self.sne_attn[i](old_sne, new_text, score_map=scale_sne_score_map)
+            new_x, loss_x, pi_img = self.img_attn[i](old_x, new_text, score_map=scale_img_score_map, temperature=self.ot_score_prior_temperature)
+            new_sne, loss_sne, pi_sne = self.sne_attn[i](old_sne, new_text, score_map=scale_sne_score_map, temperature=self.ot_score_prior_temperature)
 
             # 收集调试/监督用的传输计划 (pi)
             if debug_store is not None or collect_pi:
@@ -1244,8 +1252,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         sne_flat = sne_flat.permute(0, 2, 1).contiguous()
 
         # OT 对齐
-        _, loss_img, _ = self.opt_img(x_flat, text_emb)
-        _, loss_sne, _ = self.opt_sne(sne_flat, text_emb)
+        _, loss_img, _ = self.opt_img(x_flat, text_emb, temperature=self.ot_score_prior_temperature)
+        _, loss_sne, _ = self.opt_sne(sne_flat, text_emb, temperature=self.ot_score_prior_temperature)
 
         losses.update(add_prefix({'loss': loss_sne}, 'sne_opt'))
         losses.update(add_prefix({'loss': loss_img}, 'img_opt'))
@@ -1295,7 +1303,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 'blc,kc->bkl', F.normalize(emb, dim=-1, p=2), self.attr_t0[name].detach()
             )
             reg_loss = F.cross_entropy(
-                score, self.attr_I[name].expand(score.shape[0], -1), reduction='mean'
+                score / self.tau, self.attr_I[name].expand(score.shape[0], -1), reduction='mean'
             )
             losses.update(add_prefix({'loss': reg_loss}, f'reg.{name}'))
 
@@ -1335,7 +1343,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 'blc,kc->bkl', F.normalize(text_emb, dim=-1, p=2), self.reg_T0.detach()
             )
             loss = F.cross_entropy(
-                content_score,
+                content_score / self.tau,
                 self.reg_I.expand(content_score.shape[0], -1),
                 reduction='mean'
             )

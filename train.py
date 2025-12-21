@@ -34,7 +34,7 @@ def parse_args():
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_20k-g2c-512.py',
         # default='configs/tqdm/tqdm_eva_vit-l_1e-5_5k-o2o-512.py',
         # default='configs/tqdm/tqt_eva_vit-b_1e-5_5k-o2o-512-sun-terrian-prefixRegion.py',
-        default=r'/root/tqdm/configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion.py',
+        default=r'/root/tqdm/configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_proj_prob_softunion_road_learnableT_promptTau.py',
         # default="/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-224.py",
         help='train config file path')
     parser.add_argument(

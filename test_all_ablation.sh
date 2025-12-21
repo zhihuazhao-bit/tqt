@@ -112,6 +112,14 @@ CONFIG_F2pMEAN="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_n
 CKPT_F2pMEANP="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2pMEANP="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion.py"
 
+# F2pSoft-learnableT-promptTau-224: 224 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_F2pSoft_learnableT_promptTau_224="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251220_0944/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_1000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_224="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
+
+# F2pSoft-learnableT-promptTau-1024: 1024 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_F2pSoft_learnableT_promptTau_1024=""  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_1024="configs/ablation/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
+
 # G2p-mean-cos: 512 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
 CKPT_G2pMEAN="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/20251214_2025/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_G2pMEAN="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
@@ -119,6 +127,10 @@ CONFIG_G2pMEAN="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_n
 # G3p-mean-cos: 512 + DenseVLM + SNE(OT, prior=True, cos, mean) + Prompt
 CKPT_G3pMEAN="/root/tqdm/work_dirs/ablation_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/20251214_2026/exp_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_G3pMEAN="/root/tqdm/configs/ablation/exp_512_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
+
+# F2pSoft-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_F2pSoft_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251219_1354/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
 
 # A1-backbone-proj: 224 + EVA02 + SNE(backbone-proj) + NoPrompt
 CKPT_A1BPROJ="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneProj_noprompt/exp_224_eva02_sneBackboneProj_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
@@ -207,11 +219,16 @@ run_test() {
 # run_test "F2d4MP" "$CONFIG_F2d4MP" "$CKPT_F2d4MP"
 # run_test "F2d4MPU" "$CONFIG_F2d4MPU" "$CKPT_F2d4MPU"
 
-run_test "F2pMAX" "$CONFIG_F2pMAX" "$CKPT_F2pMAX"
-run_test "F2pMEAN" "$CONFIG_F2pMEAN" "$CKPT_F2pMEAN"
-run_test "F2pMEANP" "$CONFIG_F2pMEANP" "$CKPT_F2pMEANP"
-run_test "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
-run_test "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
+# run_test "F2pMAX" "$CONFIG_F2pMAX" "$CKPT_F2pMAX"
+# run_test "F2pMEAN" "$CONFIG_F2pMEAN" "$CKPT_F2pMEAN"
+# run_test "F2pMEANP" "$CONFIG_F2pMEANP" "$CKPT_F2pMEANP"
+# run_test "F2pSoft-learnableT-promptTau-224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224"
+# run_test "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
+# run_test "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
+# run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
+run_test "F2pSoft_learnableT_promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224" 
+## 1024 分辨率
+# run_test "F2pSoft-learnableT-promptTau-1024" "$CONFIG_F2pSoft_learnableT_promptTau_1024" "$CKPT_F2pSoft_learnableT_promptTau_1024"
 
 # run_test "G3pMEAN" "$CONFIG_G3pMEAN" "$CKPT_G3pMEAN"
 # run_test "A1BPROJ" "$CONFIG_A1BPROJ" "$CKPT_A1BPROJ"

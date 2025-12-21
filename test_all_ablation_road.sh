@@ -64,6 +64,10 @@ CONFIG_F2p_mean_cos="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisu
 CKPT_F2p_mean_cos_512="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/20251216_1157/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2p_mean_cos_512="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_road.py"
 
+# F2p-mean-cos-soft-512: 512 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt(Soft)
+CKPT_F2pSoft_mean_cos_soft_512="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_road/20251217_1300/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_road/best_mIoU_iter_3000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_mean_cos_soft_512="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_road.py"
+
 # F2p-mean-prob-soft: 224 + EVA02 + SNE(OT, prior=prob+softunion, cos, mean) + Patch-FPN + piSup + Prompt
 CKPT_F2p_mean_prob_soft="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/20251215_1727/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2p_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road.py"
@@ -72,6 +76,22 @@ CONFIG_F2p_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patchfp
 CKPT_F2p_mean_prob_soft_512="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/20251216_1157/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2p_mean_prob_soft_512="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road.py"
 
+# F2pSoft-learnableT-promptTau-224: 224 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_F2pSoft_learnableT_promptTau_224="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251220_0944/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_5000.pth"  # TODO: 填入 Road3D checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_224="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
+
+# F2pSoft-learnableT-promptTau-1024: 1024 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_F2pSoft_learnableT_promptTau_1024=""  # TODO: 填入 Road3D checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_1024="configs/ablation_road/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
+
+# F2p-mean-prob-soft-0.5-512: 512 + EVA02 + SNE(OT, prior=prob+softunion, T=0.5, cos, mean) + Patch-FPN + piSup + Prompt(Soft)
+CKPT_F2pSoft_mean_prob_soft_512_T05="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/20251217_1304/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_mean_prob_soft_512_T05="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5.py"
+
+# F2p-mean-prob-soft-0.5-512-hard: 512 + EVA02 + SNE(OT, prior=prob+softunion, T=0.5, cos, mean) + Patch-FPN + piSup + Prompt(Hard)
+CKPT_F2pHard_mean_prob_soft_512_T05="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road_0.5/20251217_1304/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road_0.5/best_mIoU_iter_4000.pth"  # TODO: 填入 checkpoint 路径
+CONFIG_F2pHard_mean_prob_soft_512_T05="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_prompt_no_cos_mean_prob_softunion_road_0.5.py"
+
 # F2c+pi-mean-cos: 224 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup (NoPrompt)
 CKPT_F2c_pi_mean_cos="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road/20251215_1727/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2c_pi_mean_cos="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_road.py"
@@ -79,6 +99,15 @@ CONFIG_F2c_pi_mean_cos="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_p
 # F2c+pi-mean-cos-prob-softunion: 224 + EVA02 + SNE(OT, prior=prob+softunion, cos, mean) + Patch-FPN + piSup (NoPrompt)
 CKPT_F2c_pi_mean_prob_soft="/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road/20251215_1726/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road/best_mIoU_iter_5000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2c_pi_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patchfpn_pisup_noprompt_no_cos_mean_prob_softunion_road.py"
+
+# F2pSoft-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau)
+CKPT_F2pSoft_learnableT_promptTau_1="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1243/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_4000.pth" # TODO: 填入 checkpoint 路径
+CKPT_F2pSoft_learnableT_promptTau_0_1="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1320/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_4000.pth" # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
+
+# F2pSoft-proj-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, proj, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau)
+CKPT_F2pSoft_proj_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_proj_prob_softunion_road_learnableT_promptTau/20251218_1243/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_proj_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_1000.pth" # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_proj_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_proj_prob_softunion_road_learnableT_promptTau.py"
 
 # ============================================================================
 
@@ -134,12 +163,24 @@ run_test() {
 # run_test "F2b" "$CONFIG_F2b" "$CKPT_F2b"
 # run_test "F2p-mean-cos" "$CONFIG_F2p_mean_cos" "$CKPT_F2p_mean_cos"
 # run_test "F2p-mean-cos-512" "$CONFIG_F2p_mean_cos_512" "$CKPT_F2p_mean_cos_512"
+# run_test "F2p-mean-cos-soft-512" "$CONFIG_F2p_mean_cos_soft_512" "$CKPT_F2p_mean_cos_soft_512"
 # run_test "F2p-mean-prob-soft" "$CONFIG_F2p_mean_prob_soft" "$CKPT_F2p_mean_prob_soft"
 # run_test "F2p-mean-prob-soft-512" "$CONFIG_F2p_mean_prob_soft_512" "$CKPT_F2p_mean_prob_soft_512"
+# run_test "F2p-mean-prob-soft-0.5-512" "$CONFIG_F2p_mean_prob_soft_512_T05" "$CKPT_F2p_mean_prob_soft_512_T05"
+# run_test "F2p-mean-prob-soft-0.5-512-hard" "$CONFIG_F2p_mean_prob_soft_512_T05_hard" "$CKPT_F2p_mean_prob_soft_512_T05_hard"
+# run_test "F2pSoft-learnableT-promptTau-224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224"
 # run_test "F2c+pi-mean-cos" "$CONFIG_F2c_pi_mean_cos" "$CKPT_F2c_pi_mean_cos"
 # run_test "F2c+pi-mean-cos-prob-softunion" "$CONFIG_F2c_pi_mean_prob_soft" "$CKPT_F2c_pi_mean_prob_soft"
-run_test "CKPT_F2p_mean_cos_512" "$CONFIG_F2p_mean_cos_512" "$CKPT_F2p_mean_cos_512"
-run_test "CKPT_F2p_mean_prob_soft_512" "$CONFIG_F2p_mean_prob_soft_512" "$CKPT_F2p_mean_prob_soft_512"
+# run_test "F2pSoft-mean-prob-soft-0.5-512" "$CONFIG_F2pSoft_mean_prob_soft_512_T05" "$CKPT_F2pSoft_mean_prob_soft_512_T05"
+# run_test "F2pHard-mean-prob-soft-0.5-512" "$CONFIG_F2pHard_mean_prob_soft_512_T05" "$CKPT_F2pHard_mean_prob_soft_512_T05"
+# run_test "F2p-mean-cos-soft-512" "$CONFIG_F2pSoft_mean_cos_soft_512" "$CKPT_F2pSoft_mean_cos_soft_512"
+# run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_1"
+# run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_0_1"
+# run_test "F2pSoft-proj-learnableT-promptTau" "$CONFIG_F2pSoft_proj_learnableT_promptTau" "$CKPT_F2pSoft_proj_learnableT_promptTau"
+## 1024 分辨率
+# run_test "F2pSoft-learnableT-promptTau-1024" "$CONFIG_F2pSoft_learnableT_promptTau_1024" "$CKPT_F2pSoft_learnableT_promptTau_1024"
+run_test "F2pSoft-learnableT-promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224"
+
 
 echo ""
 echo "=========================================="

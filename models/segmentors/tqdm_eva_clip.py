@@ -33,11 +33,16 @@ class tqdm_EVA_CLIP(BaseSegmentor):
                  train_cfg=None,
                  test_cfg=None,
                  init_cfg=None,
+                 tau=0.07,
                  **args):
 
         super(tqdm_EVA_CLIP, self).__init__(init_cfg)
 
-        self.tau = 0.07
+        if tau is None:
+            self.tau = nn.Parameter(torch.tensor(0.07))
+        else:
+            self.tau = tau
+
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
         self.prefix_text = args.get('prefix_text', 'a clean origami of a ')
