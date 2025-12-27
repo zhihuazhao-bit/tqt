@@ -18,6 +18,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from utils.scene_config import DATASET_UNKNOWN_SCENES, ABNORMAL_SCENES
+
 
 def per_class_metrics_from_conf(conf):
     # 每类 precision/recall/IoU
@@ -61,11 +63,8 @@ def getScores_self(conf_matrix):
     return mprec, mrecall, mf1, miou, fwIoU, prec_road, rec_road, f1_road, iou_road
 
 
-# 数据集 unknown 场景配置
-DATASET_UNKNOWN_SCENES = {
-    'road3d': ['2021-0403-1744', '0602-1107', '2021-0222-1743', '2021-0403-1858'],
-    'orfd': ['0609-1923', '2021-0223-1756'],
-}
+# 数据集 unknown 场景配置和异常场景配置已移至 utils/scene_config.py
+# 通过 from utils.scene_config import DATASET_UNKNOWN_SCENES, ABNORMAL_SCENES 导入
 
 
 # 消融实验配置 - 手动指定 CSV 路径
@@ -593,6 +592,54 @@ ABLATION_EXPERIMENTS = {
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1320/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251219_101507.csv',
     },
 
+    'F2pSoft-learnableT-promptTau-linear': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear',
+        'desc': '512 + EVA02 + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau, linear)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'prompt_cls_type': 'linear',
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear/testing_eval_file_stats_20251221_221834.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear/testing_eval_file_stats_20251222_091618.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
+    'F2pSoft-learnableT-promptTau-linear_text': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text',
+        'desc': '512 + EVA02 + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau, linear+text)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'prompt_cls_type': 'linear_text',
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text/testing_eval_file_stats_20251221_222642.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear_text/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear_text/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_linear_text/testing_eval_file_stats_20251222_095148.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
     'F2pSoft-learnableT-promptTau-orfd': {
         'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau',
         'desc': '512 + EVA02 + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau) [ORFD]',
@@ -635,34 +682,11 @@ ABLATION_EXPERIMENTS = {
         'context_decoder': True,
         'patch_fpn': True,
         'pi_sup': True,
-        'csv_orfd': '',   # TODO: ORFD 测试结果 CSV
-        'csv_road3d': '', # TODO: Road3D 测试结果 CSV (road 配置文件)
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251220_0944/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251220_200138.csv',   # TODO: ORFD 测试结果 CSV
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251220_0944/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251220_203516.csv', # TODO: Road3D 测试结果 CSV (road 配置文件)
     },
 
-    'F2pSoft-learnableT-promptTau-1024-road': {
-        'name': 'ablation_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau',
-        'desc': '1024 + EVA02 + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau) [Road3D]',
-        'size': 1024,
-        'weight': 'EVA02',
-        'sne': True,
-        'sne_fusion_stage': 'backbone',
-        'sne_mode': 'ot',
-        'ot_prior': True,
-        'ot_prior_mode': 'prob',
-        'ot_cost_type': 'cos',
-        'ot_fuse_mode': 'mean',
-        'ot_softunion': True,
-        'ot_fuse_output': False,
-        'prompt': True,
-        'prompt_cls_mode': 'soft',
-        'context_decoder': True,
-        'patch_fpn': True,
-        'pi_sup': True,
-        'csv_orfd': '',
-        'csv_road3d': '',  # TODO: Road3D 测试结果 CSV
-    },
-
-    'F2pSoft-learnableT-promptTau-1024-orfd': {
+    'F2pSoft-learnableT-promptTau-1024': {
         'name': 'ablation_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau',
         'desc': '1024 + EVA02 + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau) [ORFD]',
         'size': 1024,
@@ -681,8 +705,8 @@ ABLATION_EXPERIMENTS = {
         'context_decoder': True,
         'patch_fpn': True,
         'pi_sup': True,
-        'csv_orfd': '',  # TODO: ORFD 测试结果 CSV
-        'csv_road3d': '',
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251220_2253/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251221_223751.csv',  # TODO: ORFD 测试结果 CSV
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251220_2253/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251221_230006.csv',
     },
 
     'F2pSoft-proj-learnableT-promptTau': {
@@ -819,7 +843,128 @@ ABLATION_EXPERIMENTS = {
         'csv_orfd': '/root/tqdm/work_dirs/ablation_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/test_results/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/testing_eval_file_stats_20251215_151954.csv',
         'csv_road3d': '',
     },
-    
+
+    'DenseVLM-learnableT-promptTau': {
+        'name': 'ablation_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau',
+        'desc': '512 + DenseVLM + SNE(OT,prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)',
+        'size': 512,
+        'weight': 'DenseVLM',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251222_1115/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251223_084300.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251222_1115/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251223_124820.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
+    'Proj-learnableT-promptTau': {
+        'name': 'ablation_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau',
+        'desc': '512 + EVA02 + SNE(proj ) + Patch-FPN + piSup + Prompt(Soft, Tau)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251222_1145/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251223_084941.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251222_1145/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251223_103805.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
+    'F2pSoft-fixedT0.01-promptTau': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau',
+        'desc': '512 + EVA02 + SNE(OT,prior=prob, Fixed T=0.01) + Patch-FPN + piSup + Prompt(Soft, Learnable Tau)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'ot_score_prior_temperature': 0.01,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'tau': 'learnable',
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau/20251222_2205/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0/testing_eval_file_stats_20251223_122013.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_fixedT0.01_promptTau/20251222_2205/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_fixedT0.01_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_fixedT0/testing_eval_file_stats_20251223_085637.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
+    'F2pSoft-config': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau',
+        'desc': '512 + EVA02 + SNE(OT,prior=prob, config fusion) + Patch-FPN + piSup + Prompt(Soft, Tau)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'config',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'prompt_cls_topk_train': None,
+        'prompt_cls_topk_test': None,
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau/20251222_1645/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251223_082729.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau/20251222_1646/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251223_093206.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
+    'F2pSoft-config-topk': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk',
+        'desc': '512 + EVA02 + SNE(OT,prior=prob, config fusion, TopK) + Patch-FPN + piSup + Prompt(Soft, Tau)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'config',
+        'ot_softunion': True,
+        'ot_fuse_output': False,
+        'prompt': True,
+        'prompt_cls_mode': 'soft',
+        'prompt_cls_topk_train': 10,
+        'prompt_cls_topk_test': 3,
+        'context_decoder': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk/20251222_1652/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk/testing_eval_file_stats_20251223_122406.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau_topk/20251222_1651/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau_topk/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_road_learnableT_promptTau_topk/testing_eval_file_stats_20251223_100715.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+
     'F2d-xsam': {
         'name': 'ablation_224_eva02_sneotTrue_patchfpn_xsam_pisup_noprompt',
         'desc': '224 + EVA02 + SNE(OT,prior=T) + Patch-FPN(PixelSampling) + piSup + NoPrompt',
@@ -937,6 +1082,300 @@ ABLATION_EXPERIMENTS = {
         'prompt': True,
         'context_decoder': True,
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_densevlm_nosne_prompt/20251204_0815/exp_512_densevlm_nosne_prompt/test_results/exp_512_densevlm_nosne_prompt/testing_eval_file_stats_20251204_115858.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # ============================================================================
+    # LearnableOnly 消融实验 - 验证文本模态必要性
+    # ============================================================================
+    'LearnableOnly': {
+        'name': 'ablation_512_eva02_learnable_only',
+        'desc': '512 + EVA02 + LearnableOnly (无文本编码)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': False,
+        'sne_fusion_stage': '-',
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'context_decoder': False,  # 自动禁用
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only/20251224_0723/exp_512_eva02_learnable_only/test_results/exp_512_eva02_learnable_only/testing_eval_file_stats_20251224_165016.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_road/20251224_0723/exp_512_eva02_learnable_only_road/test_results/exp_512_eva02_learnable_only_road/testing_eval_file_stats_20251224_171730.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # LearnableOnly + M2F Decoder: 使用标准 Mask2Former pixel decoder (无文本交叉注意力)
+    'LearnableOnly-M2F': {
+        'name': 'ablation_512_eva02_learnable_only_m2f_decoder',
+        'desc': '512 + EVA02 + LearnableOnly + M2F Decoder (无文本交叉注意力)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': False,
+        'sne_fusion_stage': '-',
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',  # 标准 Mask2Former pixel decoder
+        'context_decoder': False,  # 自动禁用
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder/20251224_2203/exp_512_eva02_learnable_only_m2f_decoder/test_results/exp_512_eva02_learnable_only_m2f_decoder/testing_eval_file_stats_20251225_072818.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_road/20251224_2157/exp_512_eva02_learnable_only_m2f_decoder_road/test_results/exp_512_eva02_learnable_only_m2f_decoder_road/testing_eval_file_stats_20251225_075349.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # SNE-Proj + LearnableOnly + M2F Decoder: SNE proj 融合 + 标准 Mask2Former pixel decoder
+    'SNEProj-LearnableOnly-M2F': {
+        'name': 'ablation_512_eva02_sneProj_learnable_only_m2f_decoder',
+        'desc': '512 + EVA02 + SNE(proj) + LearnableOnly + M2F Decoder',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',  # 标准 Mask2Former pixel decoder
+        'context_decoder': False,  # 自动禁用
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_learnable_only_m2f_decoder/20251224_2258/exp_512_eva02_sneProj_learnable_only_m2f_decoder/test_results/exp_512_eva02_sneProj_learnable_only_m2f_decoder/testing_eval_file_stats_20251225_073444.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_learnable_only_m2f_decoder_road/20251224_2303/exp_512_eva02_sneProj_learnable_only_m2f_decoder_road/test_results/exp_512_eva02_sneProj_learnable_only_m2f_decoder_road/testing_eval_file_stats_20251225_082005.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # SNE-OT + LearnableOnly: 保留完整OT架构，仅用可学习向量替代文本编码器
+    'SNEOT-LearnableOnly': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_learnable_only',
+        'desc': '512 + EVA02 + SNE(OT) + PatchFPN + piSup + LearnableOnly',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'patch_fpn': True,
+        'pi_sup': True,
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'context_decoder': False,  # 自动禁用
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_learnable_only/20251224_0724/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only/testing_eval_file_stats_20251224_165730.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_learnable_only_road/20251224_0724/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only_road/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only_road/testing_eval_file_stats_20251224_175544.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # ============================================================================
+    # Material Classification 消融实验 - 场景库从24扩展到240
+    # ============================================================================
+    'Material': {
+        'name': 'ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material',
+        'desc': '512 + EVA02 + SNE(OT) + PatchFPN + piSup + Soft + Material (场景库 24->240)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'ot_temperature': 'learnable',
+        'patch_fpn': True,
+        'pi_sup': True,
+        'prompt': 'soft',
+        'prompt_cls_type': 'text_encoder',
+        'prompt_temperature_mode': 'tau',
+        'tau': 'learnable',
+        'use_material_cls': True,  # 启用材质分类
+        'context_decoder': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material/20251224_1301/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material/testing_eval_file_stats_20251225_074306.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_material/20251224_1301/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_material/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau_material/testing_eval_file_stats_20251225_085950.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # LearnableOnly + M2F Decoder + No Pretrain: 无预训练权重，验证预训练对性能的影响
+    'LearnableOnly-M2F-NoPretrain': {
+        'name': 'ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain',
+        'desc': '512 + EVA02 + LearnableOnly + M2F Decoder + 无预训练权重 (from scratch)',
+        'size': 512,
+        'weight': 'EVA02 (no pretrain)',
+        'sne': False,
+        'sne_fusion_stage': '-',
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',  # 标准 Mask2Former pixel decoder
+        'context_decoder': False,  # 自动禁用
+        'pretrained': False,  # 无预训练权重
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/testing_eval_file_stats_20251225_230751.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/testing_eval_file_stats_20251225_235240.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # LearnableOnly + M2F Decoder + No Score Map Reg: 无 Vision-Language score_map 正则化
+    'LearnableOnly-M2F-NoScoreMapReg': {
+        'name': 'ablation_512_eva02_learnable_only_m2f_decoder_no_score_map_reg',
+        'desc': '512 + EVA02 + LearnableOnly + M2F Decoder + 无 score_map 正则化',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': False,
+        'sne_fusion_stage': '-',
+        'prompt': 'learnable_only',  # 特殊值表示仅可学习向量
+        'prompt_cls_type': 'learnable_only',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',  # 标准 Mask2Former pixel decoder
+        'context_decoder': False,  # 自动禁用
+        'use_score_map_reg': False,  # 禁用 Vision-Language score_map 正则化
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_score_map_reg/20251225_1845/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg/testing_eval_file_stats_20251225_231321.csv',  # TODO: 填入 ORFD 测试结果 CSV 路径
+        'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_score_map_reg_road/20251225_1829/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg_road/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg_road/testing_eval_file_stats_20251226_003622.csv',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # ============================================================================
+    # 预训练权重消融实验 (8个配置)
+    # ============================================================================
+    # P1: SNE Proj + Learnable Only + No Pretrain (text=F, img=F)
+    'P1-NoPretrain': {
+        'name': 'ablation_512_eva02_sneProj_m2f_no_pretrain',
+        'desc': '512 + EVA02 + SNE(proj) + M2F + 无预训练 (text=F, img=F)',
+        'size': 512,
+        'weight': 'EVA02 (no pretrain)',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': 'learnable_only',
+        'prompt_cls_type': 'learnable_only',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',
+        'context_decoder': False,
+        'load_text_pretrained': False,
+        'load_image_pretrained': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_no_pretrain/20251226_1231/exp_512_eva02_sneProj_m2f_no_pretrain/test_results/exp_512_eva02_sneProj_m2f_no_pretrain/testing_eval_file_stats_20251227_074132.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P2: SNE Proj + Text Pretrain (text=T, img=F, prompt_cls=F)
+    'P2-TextPretrain': {
+        'name': 'ablation_512_eva02_sneProj_m2f_text_pretrain',
+        'desc': '512 + EVA02 + SNE(proj) + M2F + Text预训练 (text=T, img=F, prompt_cls=F)',
+        'size': 512,
+        'weight': 'EVA02 (text only)',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': False,
+        'prompt_cls': False,
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain/20251226_1236/exp_512_eva02_sneProj_m2f_text_pretrain/test_results/exp_512_eva02_sneProj_m2f_text_pretrain/testing_eval_file_stats_20251227_075401.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P3: SNE Proj + Full Pretrain (text=T, img=T, prompt_cls=F)
+    'P3-FullPretrain': {
+        'name': 'ablation_512_eva02_sneProj_m2f_full_pretrain',
+        'desc': '512 + EVA02 + SNE(proj) + M2F + 完整预训练 (text=T, img=T, prompt_cls=F)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': False,
+        'prompt_cls': False,
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain/test_results/exp_512_eva02_sneProj_m2f_full_pretrain/testing_eval_file_stats_20251227_080433.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P4: SNE Proj + Full Pretrain + PromptCls (text=T, img=T, prompt_cls=T)
+    'P4-FullPretrain-PromptCls': {
+        'name': 'ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls',
+        'desc': '512 + EVA02 + SNE(proj) + M2F + 完整预训练 + PromptCls (text=T, img=T)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': True,
+        'prompt_cls': True,
+        'prompt_cls_type': 'text_encoder',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/testing_eval_file_stats_20251227_081504.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P5: SNE Proj + Text Pretrain + PromptCls (text=T, img=F, prompt_cls=T)
+    'P5-TextPretrain-PromptCls': {
+        'name': 'ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls',
+        'desc': '512 + EVA02 + SNE(proj) + M2F + Text预训练 + PromptCls (text=T, img=F)',
+        'size': 512,
+        'weight': 'EVA02 (text only)',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'proj',
+        'prompt': True,
+        'prompt_cls': True,
+        'prompt_cls_type': 'text_encoder',
+        'pixel_decoder': 'MSDeformAttnPixelDecoder',
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/testing_eval_file_stats_20251227_082559.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P6: SNE OT + Patch-FPN + Text Pretrain + PromptCls (text=T, img=F)
+    'P6-SNEOT-TextPretrain': {
+        'name': 'ablation_512_eva02_sneot_patchfpn_text_pretrain',
+        'desc': '512 + EVA02 + SNE(OT) + Patch-FPN + Text预训练 + PromptCls (text=T, img=F)',
+        'size': 512,
+        'weight': 'EVA02 (text only)',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'patch_fpn': True,
+        'prompt': True,
+        'prompt_cls': True,
+        'prompt_cls_type': 'text_encoder',
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain/testing_eval_file_stats_20251227_083747.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P7: SNE OT + Patch-FPN + Text Pretrain + No PromptCls (text=T, img=F, prompt_cls=F)
+    'P7-SNEOT-TextPretrain-NoPromptCls': {
+        'name': 'ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls',
+        'desc': '512 + EVA02 + SNE(OT) + Patch-FPN + Text预训练 (text=T, img=F, prompt_cls=F)',
+        'size': 512,
+        'weight': 'EVA02 (text only)',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'patch_fpn': True,
+        'prompt': False,
+        'prompt_cls': False,
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': False,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/testing_eval_file_stats_20251227_084903.csv',
+        'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
+    },
+    # P8: SNE OT + Patch-FPN + Full Pretrain + No PromptCls (text=T, img=T, prompt_cls=F)
+    'P8-SNEOT-FullPretrain-NoPromptCls': {
+        'name': 'ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls',
+        'desc': '512 + EVA02 + SNE(OT) + Patch-FPN + 完整预训练 (text=T, img=T, prompt_cls=F)',
+        'size': 512,
+        'weight': 'EVA02',
+        'sne': True,
+        'sne_fusion_stage': 'backbone',
+        'sne_mode': 'ot',
+        'ot_prior': True,
+        'ot_prior_mode': 'prob',
+        'ot_cost_type': 'cos',
+        'ot_fuse_mode': 'mean',
+        'ot_softunion': True,
+        'patch_fpn': True,
+        'prompt': False,
+        'prompt_cls': False,
+        'context_decoder': True,
+        'load_text_pretrained': True,
+        'load_image_pretrained': True,
+        'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/testing_eval_file_stats_20251227_090053.csv',
         'csv_road3d': '',  # TODO: 填入 Road3D 测试结果 CSV 路径
     },
 }
@@ -1057,6 +1496,11 @@ def analyze_csv(csv_path, dataset_name=None):
         metrics['dataset'] = dataset_name
         metrics['num_known_scenes'] = df[~unknown_mask]['scene'].nunique()
         metrics['num_unknown_scenes'] = df[unknown_mask]['scene'].nunique()
+
+    # Normal/Abnormal 场景分割 (新增)
+    abnormal_mask = df['scene'].isin(ABNORMAL_SCENES)
+    metrics['normal'] = compute_metrics(subset_matrix(df[~abnormal_mask]))
+    metrics['abnormal'] = compute_metrics(subset_matrix(df[abnormal_mask]))
     
     return metrics
 
@@ -1094,6 +1538,8 @@ def process_dataset(dataset_name, args):
     results_overall = []
     results_known = []
     results_unknown = []
+    results_normal = []
+    results_abnormal = []
     
     # 收集各实验结果
     for exp_id, exp_info in ABLATION_EXPERIMENTS.items():
@@ -1153,6 +1599,8 @@ def process_dataset(dataset_name, args):
             results_overall.append({**base_row, **empty_metrics})
             results_known.append({**base_row, **empty_metrics})
             results_unknown.append({**base_row, **empty_metrics})
+            results_normal.append({**base_row, **empty_metrics})
+            results_abnormal.append({**base_row, **empty_metrics})
             continue
         
         print(f"[{exp_id}] {exp_info['desc']}")
@@ -1203,6 +1651,32 @@ def process_dataset(dataset_name, args):
                 results_known.append({**base_row, **empty_metrics})
                 results_unknown.append({**base_row, **empty_metrics})
                 print(f"    [known/unknown] 未检测到数据集，无法区分场景")
+
+            # Normal/Abnormal 结果
+            if 'normal' in metrics and 'abnormal' in metrics:
+                m_normal = metrics['normal']
+                m_abnormal = metrics['abnormal']
+                
+                results_normal.append({
+                    **base_row,
+                    'mIoU': f"{m_normal['mIoU']:.4f}",
+                    'mF1': f"{m_normal['mF1']:.4f}",
+                    'fwIoU': f"{m_normal['fwIoU']:.4f}",
+                    'iou_trav': f"{m_normal['iou_trav']:.4f}",
+                })
+                results_abnormal.append({
+                    **base_row,
+                    'mIoU': f"{m_abnormal['mIoU']:.4f}",
+                    'mF1': f"{m_abnormal['mF1']:.4f}",
+                    'fwIoU': f"{m_abnormal['fwIoU']:.4f}",
+                    'iou_trav': f"{m_abnormal['iou_trav']:.4f}",
+                })
+                print(f"    [normal]   mIoU={m_normal['mIoU']:.4f}, mF1={m_normal['mF1']:.4f}")
+                print(f"    [abnormal] mIoU={m_abnormal['mIoU']:.4f}, mF1={m_abnormal['mF1']:.4f}")
+            else:
+                empty_metrics = {'mIoU': 'N/A', 'mF1': 'N/A', 'fwIoU': 'N/A', 'iou_trav': 'N/A'}
+                results_normal.append({**base_row, **empty_metrics})
+                results_abnormal.append({**base_row, **empty_metrics})
                 
         except Exception as e:
             print(f"    错误: {e}")
@@ -1210,6 +1684,8 @@ def process_dataset(dataset_name, args):
             results_overall.append({**base_row, **error_metrics})
             results_known.append({**base_row, **error_metrics})
             results_unknown.append({**base_row, **error_metrics})
+            results_normal.append({**base_row, **error_metrics})
+            results_abnormal.append({**base_row, **error_metrics})
     
     # 打印 Overall 结果表格
     print("\n" + "=" * 100)
@@ -1231,20 +1707,40 @@ def process_dataset(dataset_name, args):
     print("=" * 100)
     df_unknown = pd.DataFrame(results_unknown)
     print(df_unknown.to_string(index=False))
+
+    # 打印 Normal 结果表格
+    print("\n" + "=" * 100)
+    print(f"消融实验结果对比表 - {dataset_display} - Normal Scenes")
+    print("=" * 100)
+    df_normal = pd.DataFrame(results_normal)
+    print(df_normal.to_string(index=False))
+
+    # 打印 Abnormal 结果表格
+    print("\n" + "=" * 100)
+    print(f"消融实验结果对比表 - {dataset_display} - Abnormal Scenes")
+    print("=" * 100)
+    df_abnormal = pd.DataFrame(results_abnormal)
+    print(df_abnormal.to_string(index=False))
     
     # 保存结果
     output_overall = Path(args.work_dirs) / f'ablation_results_{dataset_name}_overall.csv'
     output_known = Path(args.work_dirs) / f'ablation_results_{dataset_name}_known.csv'
     output_unknown = Path(args.work_dirs) / f'ablation_results_{dataset_name}_unknown.csv'
+    output_normal = Path(args.work_dirs) / f'ablation_results_{dataset_name}_normal.csv'
+    output_abnormal = Path(args.work_dirs) / f'ablation_results_{dataset_name}_abnormal.csv'
     
     df_overall.to_csv(output_overall, index=False)
     df_known.to_csv(output_known, index=False)
     df_unknown.to_csv(output_unknown, index=False)
+    df_normal.to_csv(output_normal, index=False)
+    df_abnormal.to_csv(output_abnormal, index=False)
     
     print(f"\n结果已保存至:")
     print(f"  Overall: {output_overall}")
     print(f"  Known:   {output_known}")
     print(f"  Unknown: {output_unknown}")
+    print(f"  Normal:  {output_normal}")
+    print(f"  Abnormal: {output_abnormal}")
     
     # 对比分析 - 使用 overall 指标
     print("\n" + "=" * 100)

@@ -15,6 +15,17 @@ from mmseg.models import build_segmentor
 from mmseg.datasets import build_dataloader, build_dataset
 
 import models  # 导入自定义模型注册
+from utils.scene_config import DATASET_UNKNOWN_SCENES, ABNORMAL_SCENES
+
+
+def detect_dataset_from_config(config_path: str) -> str:
+    """根据 config 路径自动检测数据集类型"""
+    config_lower = config_path.lower()
+    if 'road3d' in config_lower or 'road2road' in config_lower:
+        return 'road3d'
+    elif 'orfd' in config_lower:
+        return 'orfd'
+    return 'orfd'  # 默认 orfd
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--show-dir', default=None, help='Directory to save visualizations (overrides output-dir).')
     parser.add_argument('--save-intermediate-dir', default='./attn', help='Directory to save intermediate tensors (score maps / OT pi).')
     parser.add_argument('--save-attn', default=True, help='Save attention weight matrices returned by the model.')
-    parser.add_argument('--force-scene-list', default="0609-1923,2021-0223-1756", help="Comma-separated scene ids to restrict inference (applies to test dataset only). Defaults to '0609-1923,2021-0223-1756'.")
+    parser.add_argument('--force-scene-list', default=None, help="Comma-separated scene ids to restrict inference. If not specified, auto-detect unknown scenes based on dataset.")
     return parser.parse_args()
 
 
@@ -88,8 +99,15 @@ def main() -> None:
     args = parse_args()
     cfg = Config.fromfile(args.config)
 
+    # 自动检测数据集并设置 unknown 场景列表
+    if args.force_scene_list is None:
+        dataset_name = detect_dataset_from_config(args.config)
+        unknown_scenes = DATASET_UNKNOWN_SCENES.get(dataset_name, [])
+        args.force_scene_list = ','.join(unknown_scenes)
+        print(f"[Auto-detect] Dataset: {dataset_name}, Unknown scenes: {unknown_scenes}")
+
     # 仅在推理时指定场景子集，不影响训练/验证配置
-    if args.force_scene_list is not None:
+    if args.force_scene_list:
         if not hasattr(cfg, 'data') or not hasattr(cfg.data, 'test'):
             raise ValueError('config missing data.test, cannot set force_scene_list')
         cfg.data.test.force_scene_list = args.force_scene_list
@@ -410,10 +428,11 @@ def main() -> None:
             img_cat = cv2.resize(img_cat, (new_w, new_h), interpolation=interpolation)
 
         # Save visualization (convert RGB to BGR for cv2)
+        # 按场景划分子目录
         img_cat_bgr = cv2.cvtColor(img_cat, cv2.COLOR_RGB2BGR)
-        save_dir = os.path.join(output_root)
+        save_dir = os.path.join(output_root, scene_name)
         os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, f'detailed_{scene_name}_{base_name}.png')
+        save_path = os.path.join(save_dir, f'detailed_{base_name}.png')
         cv2.imwrite(str(save_path), img_cat_bgr)
 
         # 保存中间结果 (score map / pi / attn)

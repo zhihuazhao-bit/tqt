@@ -23,12 +23,12 @@ def parse_args():
     parser.add_argument(
         '--config', 
         # default='/root/tqdm/configs/tqdm/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable.py',
-        default=r'configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5.py',
+        default=r'configs/ablation/exp_512_eva02_learnable_only.py',
         help='test config file path')
     parser.add_argument(
         '--checkpoint', 
         # default='/root/tqdm/work_dirs/weights/tqdm_eva_vit-b_1e-5_5k-o2o-512-sufficient-traversable/best_mIoU_iter_4000.pth',
-        default=r'/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/20251217_1304/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_0.5/best_mIoU_iter_4000.pth',
+        default=r'/root/tqdm/work_dirs/ablation_512_eva02_learnable_only/20251224_0723/exp_512_eva02_learnable_only/best_mIoU_iter_3000.pth',
         help='checkpoint file')
     parser.add_argument(
         '--aug-test', action='store_true', help='Use Flip and Multi scale aug')
@@ -87,6 +87,10 @@ def parse_args():
     parser.add_argument('--local-rank', type=int, default=0)
     parser.add_argument('--aug_ratio_start', type=float, default=-1)
     parser.add_argument('--exp_tag', default=None)
+    parser.add_argument(
+        '--use-train-set',
+        action='store_true',
+        help='Use training set for evaluation instead of test set')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -114,6 +118,16 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = mmcv.Config.fromfile(args.config)
+
+    # 使用训练集进行评估
+    if args.use_train_set:
+      print("Using training set for evaluation")
+      # 只替换数据路径，保留测试管道
+      cfg.data.test.img_dir = cfg.data.train.source.img_dir
+      cfg.data.test.ann_dir = cfg.data.train.source.ann_dir
+      if hasattr(cfg.data.train.source, 'split'):
+          cfg.data.test.split = cfg.data.train.source.split
+
     # 导入 SimpleTokenizer
     from models.backbones.utils import SimpleTokenizer
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # 512 + EVA02 + SNE(backbone-ot, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + pi 监督 + Prompt(Soft, uses Tau) - Road3D
 
-GPU=0
+GPU=4
 SEED=42
 CONFIG="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
 
@@ -13,7 +13,7 @@ echo "=========================================="
 
 CUDA_VISIBLE_DEVICES=$GPU python train.py \
     --config $CONFIG \
-    --gpu-id=0 \
+    --gpu-id=$GPU \
     --seed=$SEED \
     --deterministic
 

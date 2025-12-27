@@ -22,6 +22,11 @@ LIMIT=-1
 # 是否显示进度条
 PROGRESS=true
 
+# 指定推理的场景列表 (留空则自动检测)
+# ORFD: "0609-1923,2021-0223-1756"
+# Road3D: "2021-0403-1744,0602-1107,2021-0222-1743,2021-0403-1858"
+FORCE_SCENE_LIST="2021-0403-1858"
+
 # ============================================================================
 # 在此填入各实验的 config / checkpoint
 # ============================================================================
@@ -157,6 +162,9 @@ CONFIG_A1PPIX="configs/ablation/exp_224_eva02_snePixelProj_noprompt.py"
 CKPT_H1pMEAN="/root/tqdm/work_dirs/ablation_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_H1pMEAN="configs/ablation/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
 
+CKPT_F2pSoft_learnableT_promptTau_0_1="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1320/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_4000.pth" # TODO: 填入 checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
+
 # ============================================================================
 
 echo "=========================================="
@@ -168,6 +176,7 @@ doit() {
     local EXP_ID=$1
     local CONFIG=$2
     local CHECKPOINT=$3
+    local SCENE_LIST=${4:-$FORCE_SCENE_LIST}  # 第4个参数可选，默认用全局变量
 
     if [ ! -f "$CHECKPOINT" ]; then
         echo "警告: Checkpoint 文件不存在: $CHECKPOINT, 跳过 $EXP_ID"
@@ -182,6 +191,7 @@ doit() {
     echo "[$EXP_ID] 开始推理"
     echo "Config: $CONFIG"
     echo "Checkpoint: $CHECKPOINT"
+    echo "Scene List: ${SCENE_LIST:-auto}"
     echo "Vis Dir: $SAVE_DIR"
     echo "Debug Dir: $DEBUG_OUT"
     echo "=========================================="
@@ -193,7 +203,8 @@ doit() {
         --limit $LIMIT \
         $( $PROGRESS && echo "--progress" ) \
         $( $SAVE_DEBUG && echo "--save-intermediate-dir $DEBUG_DIR" ) \
-        --save-attn "$SAVE_ATTN"
+        --save-attn "$SAVE_ATTN" \
+        $( [ -n "$SCENE_LIST" ] && echo "--force-scene-list $SCENE_LIST" )
 
     echo "[$EXP_ID] 推理完成!"
     echo "可视化: $SAVE_DIR"
@@ -226,11 +237,11 @@ doit() {
 # doit "F2d4MP" "$CONFIG_F2d4MP" "$CKPT_F2d4MP"
 # doit "F2d4MPU" "$CONFIG_F2d4MPU" "$CKPT_F2d4MPU"   
 
-doit "F2pMAX" "$CONFIG_F2pMAX" "$CKPT_F2pMAX"
-doit "F2pMEAN" "$CONFIG_F2pMEAN" "$CKPT_F2pMEAN"
-doit "F2pMEANP" "$CONFIG_F2pMEANP" "$CKPT_F2pMEANP"
-doit "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
-doit "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
+# doit "F2pMAX" "$CONFIG_F2pMAX" "$CKPT_F2pMAX"
+# doit "F2pMEAN" "$CONFIG_F2pMEAN" "$CKPT_F2pMEAN"
+# doit "F2pMEANP" "$CONFIG_F2pMEANP" "$CKPT_F2pMEANP"
+# doit "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
+# doit "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
 
 # doit "G3pMEAN" "$CONFIG_G3pMEAN" "$CKPT_G3pMEAN"
 # doit "A1BPROJ" "$CONFIG_A1BPROJ" "$CKPT_A1BPROJ"
@@ -240,6 +251,8 @@ doit "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
 # doit "A1PPIX" "$CONFIG_A1PPIX" "$CKPT_A1PPIX"
 
 # doit "F2d-xsam" "$CONFIG_F2dXSAM" "$CKPT_F2dXSAM"
+
+doit "F2pSoft_learnableT_promptTau_0_1" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_0_1" "2021-0228-1811"
 
 echo "=========================================="
 echo "所有推理完成!"

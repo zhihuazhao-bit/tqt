@@ -1,12 +1,14 @@
 #!/bin/bash
 # 消融实验测试脚本 - 串行运行所有测试
-# 
+#
 # 使用方法:
 #   1. 修改下方 CKPT_* 变量，填入各实验的 checkpoint 路径
-#   2. 运行: bash test_all_ablation.sh
-#   3. 测试完成后，运行 python statis_ablation_results.py 统计结果
+#   2. 设置 USE_TRAIN_SET=true 可在训练集上评估 (默认 false 在测试集评估)
+#   3. 运行: bash test_all_ablation.sh
+#   4. 测试完成后，运行 python statis_ablation_results.py 统计结果
 
 GPU=0
+USE_TRAIN_SET=false  # 设为 true 则在训练集上评估
 
 # ============================================================================
 # 请在此处填入各实验的 checkpoint 路径
@@ -117,7 +119,7 @@ CKPT_F2pSoft_learnableT_promptTau_224="/root/tqdm/work_dirs/ablation_224_eva02_s
 CONFIG_F2pSoft_learnableT_promptTau_224="configs/ablation/exp_224_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
 
 # F2pSoft-learnableT-promptTau-1024: 1024 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
-CKPT_F2pSoft_learnableT_promptTau_1024=""  # TODO: 填入 ORFD checkpoint 路径
+CKPT_F2pSoft_learnableT_promptTau_1024="/root/tqdm/work_dirs/ablation_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251220_2253/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_4000.pth"  # TODO: 填入 ORFD checkpoint 路径
 CONFIG_F2pSoft_learnableT_promptTau_1024="configs/ablation/exp_1024_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
 
 # G2p-mean-cos: 512 + EVA02 + SNE(OT, prior=True, cos, mean) + Patch-FPN + piSup + Prompt
@@ -131,6 +133,27 @@ CONFIG_G3pMEAN="/root/tqdm/configs/ablation/exp_512_densevlm_sneotTrue_patchfpn_
 # F2pSoft-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
 CKPT_F2pSoft_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251219_1354/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2pSoft_learnableT_promptTau="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
+CONFIG2ROAD_F2pSoft_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
+
+# F2pSoft-learnableT-promptTau-linear: 512 + EVA02 + PromptCls(linear)
+CKPT_F2pSoft_learnableT_promptTau_linear="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear/best_mIoU_iter_5000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_linear="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear.py"
+
+# F2pSoft-learnableT-promptTau-linear_text: 512 + EVA02 + PromptCls(linear_text)
+CKPT_F2pSoft_learnableT_promptTau_linear_text="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text/20251221_1432/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text/best_mIoU_iter_4000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_learnableT_promptTau_linear_text="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_linear_text.py"
+
+# F2pSoft-fixedT0.01-promptTau: 512 + EVA02 + Fixed OT T=0.01 + Learnable Tau
+CKPT_F2pSoft_fixedT0_01="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau/20251222_2205/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_fixedT0_01="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_fixedT0.01_promptTau.py"
+
+# F2pSoft-config: 512 + EVA02 + SNE(OT, prior=prob, config fusion) + 无TopK
+CKPT_F2pSoft_config="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau/20251222_1645/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_config="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau.py"
+
+# F2pSoft-config-topk: 512 + EVA02 + SNE(OT, prior=prob, config fusion) + TopK(10/3)
+CKPT_F2pSoft_config_topk="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk/20251222_1652/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_F2pSoft_config_topk="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_config_prob_softunion_learnableT_promptTau_topk.py"
 
 # A1-backbone-proj: 224 + EVA02 + SNE(backbone-proj) + NoPrompt
 CKPT_A1BPROJ="/root/tqdm/work_dirs/ablation_224_eva02_sneBackboneProj_noprompt/exp_224_eva02_sneBackboneProj_noprompt/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
@@ -155,6 +178,87 @@ CONFIG_A1PPIX="configs/ablation/exp_224_eva02_snePixelProj_noprompt.py"
 CKPT_H1pMEAN="/root/tqdm/work_dirs/ablation_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_H1pMEAN="configs/ablation/exp_224_densevlm_sneotTrue_patchfpn_pisup_prompt_no_cos_mean.py"
 
+# DenseVLM-learnableT-promptTau: 512 + DenseVLM + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
+CKPT_DenseVLM_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251222_1115/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_DenseVLM_learnableT_promptTau="configs/ablation/exp_512_densevlm_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
+
+# CrossAttn-learnableT-promptTau: 512 + EVA02 + SNE(backbone-cross_attn) + Patch-FPN + Prompt(Soft, Tau)
+CKPT_Proj_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251222_1145/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_1000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_Proj_learnableT_promptTau="configs/ablation/exp_512_eva02_sneProjTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
+
+# LearnableOnly: 512 + EVA02 + learnable_only (仅可学习掩码向量，无文本编码)
+CKPT_LearnableOnly="/root/tqdm/work_dirs/ablation_512_eva02_learnable_only/20251224_0723/exp_512_eva02_learnable_only/best_mIoU_iter_3000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_LearnableOnly="configs/ablation/exp_512_eva02_learnable_only.py"
+
+# LearnableOnly + M2F Decoder: 512 + EVA02 + learnable_only + 标准 Mask2Former pixel decoder
+CKPT_LearnableOnly_M2F="/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder/20251224_2203/exp_512_eva02_learnable_only_m2f_decoder/best_mIoU_iter_5000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_LearnableOnly_M2F="configs/ablation/exp_512_eva02_learnable_only_m2f_decoder.py"
+
+# SNE-Proj + LearnableOnly + M2F Decoder: 512 + EVA02 + SNE(proj) + learnable_only + 标准 Mask2Former pixel decoder
+CKPT_SNEProj_LearnableOnly_M2F="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_learnable_only_m2f_decoder/20251224_2258/exp_512_eva02_sneProj_learnable_only_m2f_decoder/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_SNEProj_LearnableOnly_M2F="configs/ablation/exp_512_eva02_sneProj_learnable_only_m2f_decoder.py"
+
+# SNE-OT + LearnableOnly: 512 + EVA02 + SNE(OT) + Patch-FPN + piSup + learnable_only (保留OT，无文本编码)
+CKPT_SNEOT_LearnableOnly="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_learnable_only/20251224_0724/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_SNEOT_LearnableOnly="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_learnable_only.py"
+
+# Material Classification: 512 + EVA02 + SNE(OT) + Patch-FPN + piSup + Prompt(Soft, Tau) + Material (场景库 24 -> 240)
+CKPT_Material="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material/20251224_1301/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material/best_mIoU_iter_3000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_Material="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau_material.py"
+
+# LearnableOnly + M2F Decoder + No Pretrain: 512 + EVA02 + learnable_only + 标准 Mask2Former pixel decoder + 无预训练权重
+CKPT_LearnableOnly_M2F_NoPretrain="/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/best_mIoU_iter_4000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_LearnableOnly_M2F_NoPretrain="configs/ablation/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain.py"
+CONFIG2ROAD_LearnableOnly_M2F_NoPretrain="configs/ablation_road/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road.py"
+
+# LearnableOnly + M2F Decoder + No Score Map Reg: 512 + EVA02 + learnable_only + 标准 Mask2Former pixel decoder + 无 score_map 正则化
+CKPT_LearnableOnly_M2F_NoScoreMapReg="/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_score_map_reg/20251225_1845/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg/best_mIoU_iter_2000.pth"  # TODO: 填入 ORFD checkpoint 路径
+CONFIG_LearnableOnly_M2F_NoScoreMapReg="configs/ablation/exp_512_eva02_learnable_only_m2f_decoder_no_score_map_reg.py"
+
+# ============================================================================
+# 预训练权重消融实验 (8个配置)
+# ============================================================================
+
+# P1: SNE Proj + Learnable Only + No Pretrain (text=F, img=F)
+CKPT_P1="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_no_pretrain/20251226_1231/exp_512_eva02_sneProj_m2f_no_pretrain/best_mIoU_iter_2000.pth"
+CONFIG_P1="configs/ablation/exp_512_eva02_sneProj_m2f_no_pretrain.py"
+CONFIG2ROAD_P1="configs/ablation_road/exp_512_eva02_sneProj_m2f_no_pretrain_road.py"
+
+# P2: SNE Proj + Text Pretrain (text=T, img=F, prompt_cls=F)
+CKPT_P2="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain/20251226_1236/exp_512_eva02_sneProj_m2f_text_pretrain/best_mIoU_iter_2000.pth"
+CONFIG_P2="configs/ablation/exp_512_eva02_sneProj_m2f_text_pretrain.py"
+CONFIG2ROAD_P2="configs/ablation_road/exp_512_eva02_sneProj_m2f_text_pretrain_road.py"
+
+# P3: SNE Proj + Full Pretrain (text=T, img=T, prompt_cls=F)
+CKPT_P3="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain/best_mIoU_iter_3000.pth"
+CONFIG_P3="configs/ablation/exp_512_eva02_sneProj_m2f_full_pretrain.py"
+CONFIG2ROAD_P3="configs/ablation_road/exp_512_eva02_sneProj_m2f_full_pretrain_road.py"
+
+# P4: SNE Proj + Full Pretrain + PromptCls (text=T, img=T, prompt_cls=T)
+CKPT_P4="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/best_mIoU_iter_2000.pth"
+CONFIG_P4="configs/ablation/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls.py"
+CONFIG2ROAD_P4="configs/ablation_road/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls_road.py"
+
+# P5: SNE Proj + Text Pretrain + PromptCls (text=T, img=F, prompt_cls=T)
+CKPT_P5="/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/best_mIoU_iter_4000.pth"
+CONFIG_P5="configs/ablation/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls.py"
+CONFIG2ROAD_P5="configs/ablation_road/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls_road.py"
+
+# P6: SNE OT + Patch-FPN + Text Pretrain + PromptCls (text=T, img=F)
+CKPT_P6="/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain/best_mIoU_iter_4000.pth"
+CONFIG_P6="configs/ablation/exp_512_eva02_sneot_patchfpn_text_pretrain.py"
+CONFIG2ROAD_P6="configs/ablation_road/exp_512_eva02_sneot_patchfpn_text_pretrain_road.py"
+
+# P7: SNE OT + Patch-FPN + Text Pretrain + No PromptCls (text=T, img=F, prompt_cls=F)
+CKPT_P7="/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/best_mIoU_iter_5000.pth"
+CONFIG_P7="configs/ablation/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls.py"
+CONFIG2ROAD_P7="configs/ablation_road/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls_road.py"
+
+# P8: SNE OT + Patch-FPN + Full Pretrain + No PromptCls (text=T, img=T, prompt_cls=F)
+CKPT_P8="/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/best_mIoU_iter_2000.pth"
+CONFIG_P8="configs/ablation/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls.py"
+CONFIG2ROAD_P8="configs/ablation_road/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls_road.py"
+
 # ============================================================================
 
 echo "=========================================="
@@ -163,34 +267,54 @@ echo "GPU: $GPU"
 echo "=========================================="
 
 # 测试函数
+# 用法: run_test EXP_ID CONFIG CHECKPOINT [USE_TRAIN]
+#   USE_TRAIN: 可选，传入 "train" 则在训练集上评估，覆盖全局 USE_TRAIN_SET
 run_test() {
     local EXP_ID=$1
     local CONFIG=$2
     local CHECKPOINT=$3
-    
+    local USE_TRAIN=${4:-}  # 可选第4参数
+
+    # 判断是否使用训练集：优先使用第4参数，否则使用全局变量
+    local USE_TRAIN_FLAG=$USE_TRAIN_SET
+    if [ "$USE_TRAIN" = "train" ]; then
+        USE_TRAIN_FLAG=true
+    fi
+
     # 自动从 checkpoint 路径获取保存目录
     local SAVE_DIR=$(dirname "$CHECKPOINT")/test_results/
-    
+    if [ "$USE_TRAIN_FLAG" = true ]; then
+        SAVE_DIR=$(dirname "$CHECKPOINT")/train_results/
+    fi
+
     echo ""
     echo "=========================================="
     echo "[$EXP_ID] 开始测试"
     echo "Config: $CONFIG"
     echo "Checkpoint: $CHECKPOINT"
     echo "Save Dir: $SAVE_DIR"
+    echo "Use Train Set: $USE_TRAIN_FLAG"
     echo "=========================================="
-    
+
     if [ ! -f "$CHECKPOINT" ]; then
         echo "警告: Checkpoint 文件不存在: $CHECKPOINT, 跳过此实验"
         return 1
     fi
-    
+
+    # 构建额外参数
+    local EXTRA_ARGS=""
+    if [ "$USE_TRAIN_FLAG" = true ]; then
+        EXTRA_ARGS="--use-train-set"
+    fi
+
     CUDA_VISIBLE_DEVICES=$GPU python test.py \
         --config $CONFIG \
         --checkpoint $CHECKPOINT \
         --eval mIoU mFscore \
         --show-dir $SAVE_DIR \
-        --save_dir $SAVE_DIR
-    
+        --save_dir $SAVE_DIR \
+        $EXTRA_ARGS
+
     echo "[$EXP_ID] 测试完成!"
     echo "CSV 保存位置: $SAVE_DIR"
 }
@@ -226,9 +350,44 @@ run_test() {
 # run_test "G2pMEAN" "$CONFIG_G2pMEAN" "$CKPT_G2pMEAN"
 # run_test "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
 # run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
-run_test "F2pSoft_learnableT_promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224" 
+# run_test "F2pSoft-learnableT-promptTau" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
+# run_test "F2pSoft-learnableT-promptTau-linear" "$CONFIG_F2pSoft_learnableT_promptTau_linear" "$CKPT_F2pSoft_learnableT_promptTau_linear"
+# run_test "F2pSoft-learnableT-promptTau-linear_text" "$CONFIG_F2pSoft_learnableT_promptTau_linear_text" "$CKPT_F2pSoft_learnableT_promptTau_linear_text"
+# run_test "F2pSoft_learnableT_promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224"
 ## 1024 分辨率
 # run_test "F2pSoft-learnableT-promptTau-1024" "$CONFIG_F2pSoft_learnableT_promptTau_1024" "$CKPT_F2pSoft_learnableT_promptTau_1024"
+
+# Fixed OT Temperature 消融实验
+# run_test "F2pSoft-fixedT0.01-promptTau" "$CONFIG_F2pSoft_fixedT0_01" "$CKPT_F2pSoft_fixedT0_01"
+
+# Config fusion 消融实验
+# run_test "F2pSoft-config" "$CONFIG_F2pSoft_config" "$CKPT_F2pSoft_config"
+# run_test "F2pSoft-config-topk" "$CONFIG_F2pSoft_config_topk" "$CKPT_F2pSoft_config_topk"
+
+# DenseVLM 和 CrossAttn 消融实验
+# run_test "DenseVLM-learnableT-promptTau" "$CONFIG_DenseVLM_learnableT_promptTau" "$CKPT_DenseVLM_learnableT_promptTau"
+# run_test "Proj-learnableT-promptTau" "$CONFIG_Proj_learnableT_promptTau" "$CKPT_Proj_learnableT_promptTau"
+
+# LearnableOnly 消融实验 (验证文本模态必要性)
+# run_test "LearnableOnly" "$CONFIG_LearnableOnly" "$CKPT_LearnableOnly"
+
+# LearnableOnly + M2F Decoder 消融实验 (标准 Mask2Former pixel decoder，无文本交叉注意力)
+# run_test "LearnableOnly-M2F" "$CONFIG_LearnableOnly_M2F" "$CKPT_LearnableOnly_M2F"
+
+# SNE-Proj + LearnableOnly + M2F Decoder 消融实验 (SNE proj 融合 + 标准 Mask2Former pixel decoder)
+# run_test "SNEProj-LearnableOnly-M2F" "$CONFIG_SNEProj_LearnableOnly_M2F" "$CKPT_SNEProj_LearnableOnly_M2F"
+
+# SNE-OT + LearnableOnly 消融实验 (保留OT架构，验证文本编码器必要性)
+# run_test "SNEOT-LearnableOnly" "$CONFIG_SNEOT_LearnableOnly" "$CKPT_SNEOT_LearnableOnly"
+
+# Material Classification 消融实验 (场景库 24 -> 240)
+# run_test "Material" "$CONFIG_Material" "$CKPT_Material"
+
+# LearnableOnly + M2F Decoder + No Pretrain 消融实验 (无预训练权重，验证预训练对性能的影响)
+# run_test "LearnableOnly-M2F-NoPretrain" "$CONFIG_LearnableOnly_M2F_NoPretrain" "$CKPT_LearnableOnly_M2F_NoPretrain"
+
+# LearnableOnly + M2F Decoder + No Score Map Reg 消融实验 (无 score_map 正则化，验证 Vision-Language 正则化对性能的影响)
+# run_test "LearnableOnly-M2F-NoScoreMapReg" "$CONFIG_LearnableOnly_M2F_NoScoreMapReg" "$CKPT_LearnableOnly_M2F_NoScoreMapReg"
 
 # run_test "G3pMEAN" "$CONFIG_G3pMEAN" "$CKPT_G3pMEAN"
 # run_test "A1BPROJ" "$CONFIG_A1BPROJ" "$CKPT_A1BPROJ"
@@ -243,6 +402,32 @@ run_test "F2pSoft_learnableT_promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTa
 # run_test "F2d-mean-cos" "$CONFIG_F2dMC" "$CKPT_F2dMC"
 # run_test "F2d-xsam" "$CONFIG_F2dXSAM" "$CKPT_F2dXSAM"  # PixelSampling Patch-FPN + pi 监督
 # run_test "F2d" "$CONFIG_F2d" "$CKPT_F2d"  # 默认先跑 conv 版，替换 CKPT 后任选
+
+# ============================================================================
+# 预训练权重消融实验 (填入 checkpoint 后取消注释运行)
+# ============================================================================
+# run_test "P1-NoPretrain" "$CONFIG_P1" "$CKPT_P1"
+# run_test "P2-TextPretrain" "$CONFIG_P2" "$CKPT_P2"
+# run_test "P3-FullPretrain" "$CONFIG_P3" "$CKPT_P3"
+# run_test "P4-FullPretrain-PromptCls" "$CONFIG_P4" "$CKPT_P4"
+# run_test "P5-TextPretrain-PromptCls" "$CONFIG_P5" "$CKPT_P5"
+# run_test "P6-SNEOT-TextPretrain" "$CONFIG_P6" "$CKPT_P6"
+# run_test "P7-SNEOT-TextPretrain-NoPromptCls" "$CONFIG_P7" "$CKPT_P7"
+# run_test "P8-SNEOT-FullPretrain-NoPromptCls" "$CONFIG_P8" "$CKPT_P8"
+
+# ============================================================================
+# 预训练权重消融实验 - ORFD2ROAD 跨域测试 (ORFD训练 -> Road3D测试)
+# ============================================================================
+run_test "LearnableOnly-M2F-NoPretrain-2ROAD" "$CONFIG2ROAD_LearnableOnly_M2F_NoPretrain" "$CKPT_LearnableOnly_M2F_NoPretrain"
+run_test "P1-NoPretrain-2ROAD" "$CONFIG2ROAD_P1" "$CKPT_P1"
+run_test "P2-TextPretrain-2ROAD" "$CONFIG2ROAD_P2" "$CKPT_P2"
+run_test "P3-FullPretrain-2ROAD" "$CONFIG2ROAD_P3" "$CKPT_P3"
+run_test "P4-FullPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P4" "$CKPT_P4"
+run_test "P5-TextPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P5" "$CKPT_P5"
+run_test "P6-SNEOT-TextPretrain-2ROAD" "$CONFIG2ROAD_P6" "$CKPT_P6"
+run_test "P7-SNEOT-TextPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P7" "$CKPT_P7"
+run_test "P8-SNEOT-FullPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P8" "$CKPT_P8"
+run_test "F2pSoft-learnableT-promptTau-2ROAD" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
 
 echo ""
 echo "=========================================="

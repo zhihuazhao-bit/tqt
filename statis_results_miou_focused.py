@@ -17,9 +17,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+# 从公共配置文件导入场景配置
+from utils.scene_config import DATASET_UNKNOWN_SCENES, ABNORMAL_SCENES
+
 # 复用原脚本中的辅助函数
 from statis_ablation_results import (
-    DATASET_UNKNOWN_SCENES,
     find_csv_for_experiment,
     analyze_csv,
     per_class_metrics_from_conf,

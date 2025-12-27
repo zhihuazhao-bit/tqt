@@ -484,6 +484,8 @@ def get_backbone(
         out_indices: int = None,
         context_length: int = None,
         xattn: bool = None,
+        load_text_pretrained: bool = True,
+        load_image_pretrained: bool = True,
 ):
     model_name = model_name.replace('/', '-')  # for callers using old naming with / in ViT names
     if isinstance(device, str):
@@ -529,7 +531,7 @@ def get_backbone(
         model = CLIP(**model_cfg, cast_dtype=cast_dtype)
     
     pretrained_cfg = {}
-    if pretrained:
+    if pretrained and (load_text_pretrained or load_image_pretrained):
         checkpoint_path = ''
         pretrained_cfg = get_pretrained_cfg(model_name, pretrained)
         if pretrained_cfg:
@@ -538,18 +540,72 @@ def get_backbone(
             checkpoint_path = pretrained
 
         if checkpoint_path:
-            logging.info(f'Loading pretrained {model_name} weights ({pretrained}).')
-            load_checkpoint(model,
-                            checkpoint_path,
-                            model_key="model|module|state_dict",
-                            strict=False,
-                            device=device) 
+            # 根据 load_text_pretrained 和 load_image_pretrained 选择性加载权重
+            if load_text_pretrained and load_image_pretrained:
+                # 全部加载
+                logging.info(f'Loading pretrained {model_name} weights (text + image).')
+                load_checkpoint(model,
+                                checkpoint_path,
+                                model_key="model|module|state_dict",
+                                strict=False,
+                                device=device)
+            else:
+                # 选择性加载
+                checkpoint = torch.load(checkpoint_path, map_location=device)
+                # 尝试获取 state_dict
+                for key in ('model', 'module', 'state_dict'):
+                    if key in checkpoint:
+                        checkpoint = checkpoint[key]
+                        break
+
+                filtered_state_dict = {}
+                for k, v in checkpoint.items():
+                    is_visual = k.startswith('visual.')
+                    is_text = k.startswith('text.') or k.startswith('token_embedding') or \
+                              k.startswith('positional_embedding') or k.startswith('text_projection') or \
+                              k.startswith('ln_final')
+
+                    if is_visual and load_image_pretrained:
+                        filtered_state_dict[k] = v
+                    elif is_text and load_text_pretrained:
+                        filtered_state_dict[k] = v
+                    elif not is_visual and not is_text:
+                        # 其他参数(如logit_scale)根据任一标志加载
+                        if load_text_pretrained or load_image_pretrained:
+                            filtered_state_dict[k] = v
+
+                load_mode = []
+                if load_image_pretrained:
+                    load_mode.append('image')
+                if load_text_pretrained:
+                    load_mode.append('text')
+                logging.info(f'Loading pretrained {model_name} weights ({" + ".join(load_mode)} only).')
+
+                # 处理 text.positional_embedding 截断
+                if 'text.positional_embedding' in filtered_state_dict and hasattr(model, 'text'):
+                    if model.text.context_length < filtered_state_dict['text.positional_embedding'].size(0):
+                        filtered_state_dict['text.positional_embedding'] = filtered_state_dict['text.positional_embedding'][:model.text.context_length]
+                        print('positional_embedding is truncated from 77 to', model.text.context_length)
+
+                # 处理 visual.positional_embedding resize
+                if 'visual.positional_embedding' in filtered_state_dict:
+                    resize_clip_pos_embed(filtered_state_dict, model)
+                elif 'visual.pos_embed' in filtered_state_dict:
+                    resize_evaclip_pos_embed(filtered_state_dict, model)
+
+                missing, unexpected = model.load_state_dict(filtered_state_dict, strict=False)
+                if missing:
+                    logging.debug(f'Missing keys: {missing}')
+                if unexpected:
+                    logging.debug(f'Unexpected keys: {unexpected}')
         else:
             error_str = (
                 f'Pretrained weights ({pretrained}) not found for model {model_name}.'
                 f'Available pretrained tags ({list_pretrained_tags_by_model(model_name)}.')
             logging.warning(error_str)
             raise RuntimeError(error_str)
+    elif pretrained:
+        logging.info(f'Skipping pretrained weights for {model_name} (load_text_pretrained={load_text_pretrained}, load_image_pretrained={load_image_pretrained}).')
 
     if "fp16" in precision or "bf16" in precision:
         logging.info(f'convert precision to {precision}')

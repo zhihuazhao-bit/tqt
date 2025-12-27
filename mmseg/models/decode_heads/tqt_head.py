@@ -251,26 +251,38 @@ class tqtHead(tqdmHead):
         # =====================================================================
         # Step 1: Pixel Decoder (与 tqdmHead 一致，增加 SNE 并行分支)
         # =====================================================================
+        # 检测 pixel_decoder 类型: 有 text_proj 属性表示需要文本交叉注意力
+        _need_text = hasattr(self.pixel_decoder, 'text_proj')
+
         attns = None
         if sne_feature is not None:
             # [增量] pixel 阶段融合: RGB 和 SNE 并行过各自的 pixel_decoder
-            if return_attn:
-                mask_rgb, memory_rgb, attns_rgb = self.pixel_decoder(feats, texts)
-                mask_sne, memory_sne, attns_sne = self.pixel_decoder_sne(sne_feature, texts)
-                attns = {'rgb': attns_rgb, 'sne': attns_sne}
+            if _need_text:
+                if return_attn:
+                    mask_rgb, memory_rgb, attns_rgb = self.pixel_decoder(feats, texts)
+                    mask_sne, memory_sne, attns_sne = self.pixel_decoder_sne(sne_feature, texts)
+                    attns = {'rgb': attns_rgb, 'sne': attns_sne}
+                else:
+                    mask_rgb, memory_rgb = self.pixel_decoder(feats, texts)
+                    mask_sne, memory_sne = self.pixel_decoder_sne(sne_feature, texts)
             else:
-                mask_rgb, memory_rgb = self.pixel_decoder(feats, texts)
-                mask_sne, memory_sne = self.pixel_decoder_sne(sne_feature, texts)
+                # 标准 Mask2Former pixel_decoder，无文本交叉注意力
+                mask_rgb, memory_rgb = self.pixel_decoder(feats)
+                mask_sne, memory_sne = self.pixel_decoder_sne(sne_feature)
             # 融合两个分支的输出
             mask_features, multi_scale_memorys = self._fuse_pixel_outputs(
                 mask_rgb, memory_rgb, mask_sne, memory_sne)
         else:
             # [与 tqdmHead 一致] 标准 pixel_decoder 处理
-            if return_attn:
-                mask_features, multi_scale_memorys, attns_rgb = self.pixel_decoder(feats, texts)
-                attns = {'rgb': attns_rgb}
+            if _need_text:
+                if return_attn:
+                    mask_features, multi_scale_memorys, attns_rgb = self.pixel_decoder(feats, texts)
+                    attns = {'rgb': attns_rgb}
+                else:
+                    mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts)
             else:
-                mask_features, multi_scale_memorys = self.pixel_decoder(feats, texts)
+                # 标准 Mask2Former pixel_decoder (MSDeformAttnPixelDecoder)
+                mask_features, multi_scale_memorys = self.pixel_decoder(feats)
 
         # =====================================================================
         # Step 2: 构建 Decoder 输入和位置编码 (与 tqdmHead 完全一致)

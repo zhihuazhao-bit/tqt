@@ -54,15 +54,29 @@ class tqdmHead(BaseDecodeHead):
         self.num_heads = transformer_decoder.transformerlayers. \
             attn_cfgs.num_heads
         self.num_transformer_decoder_layers = transformer_decoder.num_layers
-        assert pixel_decoder.encoder.transformerlayers. \
-                   attn_cfgs[0].num_levels == num_transformer_feat_level
+        # 兼容两种 pixel_decoder 配置格式:
+        # - AttntqdmMSDeformAttnPixelDecoder: attn_cfgs 是列表
+        # - MSDeformAttnPixelDecoder: attn_cfgs 是字典
+        _attn_cfgs = pixel_decoder.encoder.transformerlayers.attn_cfgs
+        if isinstance(_attn_cfgs, list):
+            assert _attn_cfgs[0].num_levels == num_transformer_feat_level
+        else:
+            assert _attn_cfgs.num_levels == num_transformer_feat_level
         pixel_decoder_ = copy.deepcopy(pixel_decoder)
 
-        pixel_decoder_.update(
-            in_channels=in_channels,
-            feat_channels=feat_channels,
-            out_channels=out_channels,
-            text_proj=text_proj) #
+        # 标准 MSDeformAttnPixelDecoder 不需要 text_proj 参数
+        _need_text_proj = pixel_decoder_.type in ['tqdmMSDeformAttnPixelDecoder', 'AttntqdmMSDeformAttnPixelDecoder']
+        if _need_text_proj:
+            pixel_decoder_.update(
+                in_channels=in_channels,
+                feat_channels=feat_channels,
+                out_channels=out_channels,
+                text_proj=text_proj)
+        else:
+            pixel_decoder_.update(
+                in_channels=in_channels,
+                feat_channels=feat_channels,
+                out_channels=out_channels)
         self.pixel_decoder = build_plugin_layer(pixel_decoder_)[1]
 
         self.transformer_decoder = build_transformer_layer_sequence(

@@ -5,20 +5,31 @@ TQT-EVA-CLIP 分割模型
 
 消融实验配置说明:
 ================
-| 配置项              | 说明                                          | 默认值     |
-|---------------------|----------------------------------------------|------------|
-| use_sne             | 是否使用 Surface Normal 双模态融合            | False      |
+| 配置项              | 说明                                          | 默认值        |
+|---------------------|----------------------------------------------|---------------|
+| use_sne             | 是否使用 Surface Normal 双模态融合            | False         |
 | sne_fusion_stage    | SNE融合阶段: 'backbone'(segmentor中) / 'pixel'(head中) | 'backbone' |
 | sne_fusion_mode     | SNE融合方式: 'proj'/'add'/'concat'/'cross_attn'/'ot' | 'proj'     |
-| use_ot_align        | 是否使用最优传输进行 img/sne 与 text 的对齐    | False      |
-| prompt_cls          | 是否使用动态场景感知提示 (天气/光照/路面)       | False      |
-| use_context_decoder | 是否使用 context decoder 增强 text embedding   | True       |
-| use_learnable_prompt| 是否使用可学习的 prompt prefix (CoOp)          | True       |
+| use_ot_align        | 是否使用最优传输进行 img/sne 与 text 的对齐    | False         |
+| prompt_cls          | 是否使用动态场景感知提示 (天气/光照/路面)       | False         |
+| prompt_cls_type     | 场景分类方式: 'text_encoder'/'linear'/'linear_text' | 'text_encoder' |
+| use_context_decoder | 是否使用 context decoder 增强 text embedding   | True          |
+| use_learnable_prompt| 是否使用可学习的 prompt prefix (CoOp)          | True          |
 
 融合阶段说明:
 =============
 - backbone: 在 segmentor 中完成 RGB-SNE 融合，融合后的特征传给 head (sne_feature=None)
 - pixel: 在 head 中使用独立 pixel_decoder 并行处理 RGB 和 SNE 后融合
+
+prompt_cls_type 说明:
+====================
+- text_encoder: 使用 CLIP text encoder 编码属性文本进行分类 + 生成场景原型 (原始方案)
+- linear: 使用 3 组可学习类别原型 + 24 个可学习场景向量 (消融: 验证 text encoder 必要性)
+- linear_text: 使用 3 组可学习类别原型 + text encoder 生成场景原型 (混合方案)
+- learnable_only: 仅使用 2 个可学习掩码向量，不使用任何文本编码 (基线: 验证文本模态必要性)
+
+注：linear/linear_text 模式的属性分类使用余弦相似度 (与 text_encoder 一致)，保证消融实验公平性
+注：learnable_only 模式自动禁用 context_decoder 和 text/visual 正则化
 
 消融实验组合示例:
 ================
@@ -29,6 +40,9 @@ TQT-EVA-CLIP 分割模型
 - +SNE (pixel proj):           use_sne=True, sne_fusion_stage='pixel', sne_fusion_mode='proj'
 - +SNE (pixel cross_attn):     use_sne=True, sne_fusion_stage='pixel', sne_fusion_mode='cross_attn'
 - +PromptCls:                  prompt_cls=True
+- +PromptCls (linear):         prompt_cls=True, prompt_cls_type='linear'
+- +PromptCls (linear_text):    prompt_cls=True, prompt_cls_type='linear_text'
+- LearnableOnly (no text):     prompt_cls=True, prompt_cls_type='learnable_only'
 - -ContextDecoder:             use_context_decoder=False
 - -LearnablePrompt:            use_learnable_prompt=False
 """
@@ -153,46 +167,62 @@ class BidirectionalCrossAttention(nn.Module):
 @SEGMENTORS.register_module()
 class tqt_EVA_CLIP(tqdm_EVA_CLIP):
     """TQT-EVA-CLIP: 支持消融实验的可通行区域分割模型。
-    
+
     消融实验配置:
         - use_sne (bool): 启用 Surface Normal 双模态融合，默认 False
         - sne_fusion_stage (str): 融合阶段，'backbone'(segmentor中)/'pixel'(head中)，默认 'backbone'
         - sne_fusion_mode (str): 融合方式，'proj'/'add'/'cross_attn'/'ot'，默认 'proj'
         - use_ot_align (bool): 启用最优传输对齐 (img/sne -> text)，默认 False
         - prompt_cls (bool): 启用动态场景感知提示，默认 False
+        - prompt_cls_type (str): 场景分类方式，默认 'text_encoder'
+            - 'text_encoder': CLIP text encoder 分类 + 生成原型 (原始方案)
+            - 'linear': 可学习类别原型 + 可学习场景向量 (消融: 验证 text encoder 必要性)
+            - 'linear_text': 可学习类别原型 + text encoder 生成场景原型 (混合方案)
+            - 'learnable_only': 仅可学习掩码向量，无文本编码 (基线: 验证文本模态)
+            注：所有模式均使用余弦相似度进行分类，保证消融实验公平性
         - use_context_decoder (bool): 启用 context decoder 增强 text，默认 True
         - use_learnable_prompt (bool): 启用可学习 prompt prefix (CoOp)，默认 True
-    
+
     消融实验组合示例:
         1. Baseline (与 tqdm 一致):
            use_sne=False, prompt_cls=False, use_context_decoder=True, use_learnable_prompt=True
-        
+
         2. +SNE (简单融合):
            use_sne=True, sne_fusion_mode='simple'
-        
+
         3. +SNE (双向交叉注意力):
            use_sne=True, sne_fusion_mode='cross_attn'
-        
+
         4. +SNE (最优传输融合):
            use_sne=True, sne_fusion_mode='ot'
-        
+
         5. +SNE + 全局OT对齐:
            use_sne=True, sne_fusion_mode='ot', use_ot_align=True
-        
-        6. +动态场景提示:
-           prompt_cls=True
-        
-        7. -Context Decoder:
+
+        6. +动态场景提示 (text_encoder):
+           prompt_cls=True, prompt_cls_type='text_encoder'
+
+        7. +动态场景提示 (linear, 消融text encoder):
+           prompt_cls=True, prompt_cls_type='linear'
+
+        8. +动态场景提示 (linear_text, 混合方案):
+           prompt_cls=True, prompt_cls_type='linear_text'
+
+        9. -Context Decoder:
            use_context_decoder=False
-        
-        8. -可学习Prompt:
-           use_learnable_prompt=False
+
+        10. -可学习Prompt:
+            use_learnable_prompt=False
     """
 
     # 场景属性类别定义
     WEATHER_CLASSES = ['sunny', 'snowy', 'foggy', 'rainy']
     ROAD_CLASSES = ['paved road', 'unpaved road']
     LIGHT_CLASSES = ['daytime', 'dusk', 'nighttime']
+    MATERIAL_CLASSES = [
+        'rural', 'forest', 'farmland', 'grassland', 'sandstone',
+        'field', 'concrete', 'asphalt', 'riverside', 'dirt'
+    ]
 
     def __init__(
         self,
@@ -225,13 +255,18 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         ot_score_prior_temperature=1.0,   # 5.2 OT prob 模式的温度系数
         ot_cost_type='cos',               # 6. OT 成本矩阵计算方式: 'cos' 或 'l2'
         ot_fuse_output=True,              # 7. OTFeatureAligner 输出是否做残差融合
-        ot_fuse_mode='proj',              # 8. OT 融合方式: 'proj' / 'mean'
+        ot_fuse_mode='proj',              # 8. OT 融合方式: 'proj' / 'mean' / 'max' / 'config'
         ot_softunion=False,               # 9. 是否在 score_map 上做 soft union 融合
         prompt_cls=False,                 # 6. 是否使用动态场景感知提示
+        prompt_cls_topk_train=None,       # 6.4 训练时 joint_probs TopK (None=全部, 10=Top10)
+        prompt_cls_topk_test=None,        # 6.5 测试时 joint_probs TopK (None=全部, 3=Top3)
         prompt_cls_mode='hard',           # 6.1 动态提示模式: 'hard' (argmax) / 'soft' (weighted sum)
         prompt_cls_temperature_mode='ot_prior', # 6.2 动态提示温度模式: 'ot_prior' (默认) / 'tau'
+        prompt_cls_type='text_encoder',   # 6.3 场景分类方式: 'text_encoder' / 'linear' / 'linear_text'
+        use_material_cls=False,           # 6.6 是否使用材质分类 (增加场景组合数)
         use_context_decoder=True,         # 6. 是否使用 context decoder
         use_learnable_prompt=True,        # 7. 是否使用可学习 prompt prefix
+        use_score_map_reg=True,           # 8. 是否使用 Vision-Language score_map 正则化
         **args
     ):
         # 调用父类初始化
@@ -274,8 +309,13 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.prompt_cls = prompt_cls
         self.prompt_cls_mode = prompt_cls_mode
         self.prompt_cls_temperature_mode = prompt_cls_temperature_mode
+        self.prompt_cls_type = prompt_cls_type
+        self.prompt_cls_topk_train = prompt_cls_topk_train
+        self.prompt_cls_topk_test = prompt_cls_topk_test
+        self.use_material_cls = use_material_cls
         self.use_context_decoder = use_context_decoder
         self.use_learnable_prompt = use_learnable_prompt
+        self.use_score_map_reg = use_score_map_reg
         self.visual_dim = visual_dim
         self.text_dim = text_dim
         self.patch_fpn_xsam = patch_fpn_xsam
@@ -297,17 +337,26 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             "sne_fusion_stage must be 'backbone' or 'pixel'"
         assert sne_fusion_mode in ['proj', 'add', 'concat', 'cross_attn', 'ot'], \
             "sne_fusion_mode must be 'proj', 'add', 'concat', 'cross_attn' or 'ot'"
-        assert ot_fuse_mode in ['proj', 'mean', 'max'], "ot_fuse_mode must be 'proj', 'mean' or 'max'"
+        assert ot_fuse_mode in ['proj', 'mean', 'max', 'config'], "ot_fuse_mode must be 'proj', 'mean', 'max' or 'config'"
         assert ot_score_prior_mode in ['argmax', 'prob'], "ot_score_prior_mode must be 'argmax' or 'prob'"
+        assert prompt_cls_type in ['text_encoder', 'linear', 'linear_text', 'learnable_only'], \
+            "prompt_cls_type must be 'text_encoder', 'linear', 'linear_text' or 'learnable_only'"
+
+        # learnable_only 模式：自动禁用 context_decoder 和正则化
+        if prompt_cls_type == 'learnable_only':
+            self.use_context_decoder = False
+            self.context_decoder = None
+            # 注意：visual_reg 和 textual_reg 在父类中已设置，
+            # 我们在 forward_train 中根据 prompt_cls_type 跳过正则化损失
 
         # 打印消融实验配置
         self._print_ablation_config()
 
-        # 加载场景信息字典 (用于 prompt_cls)
-        if self.prompt_cls:
-            scene_dict_path = '/root/tqdm/dataset/ORFD/english_scene_dict.json'
-            with open(scene_dict_path, 'r') as f:
-                self.scene2info = json.load(f)
+        # 加载场景信息字典 (用于 prompt_cls，learnable_only 模式不需要)
+        # if self.prompt_cls and self.prompt_cls_type != 'learnable_only':
+        scene_dict_path = '/root/tqdm/dataset/ORFD/english_scene_dict.json'
+        with open(scene_dict_path, 'r') as f:
+            self.scene2info = json.load(f)
 
         # ====== 初始化计数器变量 (与 SNE 解耦) ======
         self.save_img_sne_sum = 0
@@ -362,6 +411,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             f"  ot_softunion:         {self.ot_softunion}\n"
             f"  prompt_cls:           {self.prompt_cls}\n"
             f"  prompt_cls_mode:      {self.prompt_cls_mode}\n"
+            f"  prompt_cls_type:      {self.prompt_cls_type}\n"
+            f"  use_material_cls:     {self.use_material_cls}\n"
             f"  use_context_decoder:  {self.use_context_decoder}\n"
             f"  use_learnable_prompt: {self.use_learnable_prompt}\n"
             f"  supervise_ot_pi:      {self.supervise_ot_pi}\n"
@@ -455,9 +506,31 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 self.text_proj = nn.Linear(text_dim, visual_dim)
 
     def _init_prompt_modules(self, token_embed_dim, context_length):
-        """初始化 Prompt 相关模块。"""
-        # 可学习 prompt (CoOp style)
-        if self.use_learnable_prompt:
+        """初始化 Prompt 相关模块。
+
+        根据 prompt_cls_type 初始化不同的分类和场景原型模块:
+        - 'text_encoder': 使用 CLIP text encoder 编码属性文本 + 生成场景原型
+        - 'linear': 使用 3 个 linear 分类器 + 24 个可学习场景向量
+        - 'linear_text': 使用 3 个 linear 分类器 + text encoder 生成场景原型
+        - 'learnable_only': 仅使用 2 个可学习掩码向量 (无文本编码器)
+        """
+        # learnable_only 模式：仅初始化可学习掩码向量，跳过其他所有模块
+        if self.prompt_cls_type == 'learnable_only':
+            # 创建 2 个可学习的类别原型向量 (traversable / non-traversable)
+            # 形状: [2, text_dim]，直接作为分类向量
+            self.learnable_class_prototypes = nn.Parameter(
+                torch.randn(2, self.text_dim)
+            )
+            nn.init.trunc_normal_(self.learnable_class_prototypes, std=0.02)
+
+            # 不需要其他 prompt 模块
+            self.contexts = None
+            self.contexts_traversable = None
+            self.contexts_notraversable = None
+            return
+
+        # 可学习 prompt (CoOp style) - 仅 text_encoder 和 linear_text 模式需要
+        if self.use_learnable_prompt and self.prompt_cls_type != 'linear':
             # 父类已初始化 self.contexts，这里初始化额外的
             self.contexts_traversable = nn.Parameter(
                 torch.randn(1, self.prompt_num, token_embed_dim)
@@ -475,16 +548,64 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
 
         # 场景感知提示分类模块
         if self.prompt_cls:
-            self.weather_prompt = nn.Parameter(
-                torch.randn(1, self.prompt_num, token_embed_dim)
-            )
-            self.light_prompt = nn.Parameter(
-                torch.randn(1, self.prompt_num, token_embed_dim)
-            )
-            self.road_prompt = nn.Parameter(
-                torch.randn(1, self.prompt_num, token_embed_dim)
-            )
-            self._init_attribute_embeddings(context_length)
+            if self.prompt_cls_type == 'text_encoder':
+                # 原始方案：使用 text encoder 编码属性文本进行分类
+                self.weather_prompt = nn.Parameter(
+                    torch.randn(1, self.prompt_num, token_embed_dim)
+                )
+                self.light_prompt = nn.Parameter(
+                    torch.randn(1, self.prompt_num, token_embed_dim)
+                )
+                self.road_prompt = nn.Parameter(
+                    torch.randn(1, self.prompt_num, token_embed_dim)
+                )
+                if self.use_material_cls:
+                    self.material_prompt = nn.Parameter(
+                        torch.randn(1, self.prompt_num, token_embed_dim)
+                    )
+                self._init_attribute_embeddings(context_length)
+
+            elif self.prompt_cls_type in ['linear', 'linear_text']:
+                # 消融方案：使用可学习的类别原型向量 (用余弦相似度分类，与 text_encoder 保持一致)
+                # 形状: [num_classes, text_dim]，作为类别原型与图像特征计算余弦相似度
+                self.weather_prototypes = nn.Parameter(
+                    torch.randn(len(self.WEATHER_CLASSES), self.text_dim)
+                )
+                self.light_prototypes = nn.Parameter(
+                    torch.randn(len(self.LIGHT_CLASSES), self.text_dim)
+                )
+                self.road_prototypes = nn.Parameter(
+                    torch.randn(len(self.ROAD_CLASSES), self.text_dim)
+                )
+                if self.use_material_cls:
+                    self.material_prototypes = nn.Parameter(
+                        torch.randn(len(self.MATERIAL_CLASSES), self.text_dim)
+                    )
+                    nn.init.trunc_normal_(self.material_prototypes, std=0.02)
+
+                # 初始化类别原型
+                nn.init.trunc_normal_(self.weather_prototypes, std=0.02)
+                nn.init.trunc_normal_(self.light_prototypes, std=0.02)
+                nn.init.trunc_normal_(self.road_prototypes, std=0.02)
+
+                if self.prompt_cls_type == 'linear':
+                    # 纯 linear 方案：场景向量数量取决于是否使用材质分类
+                    # 不使用材质: 4 天气 x 3 光照 x 2 道路 = 24
+                    # 使用材质:   4 天气 x 3 光照 x 2 道路 x 10 材质 = 240
+                    # 每个场景有 2 个类别 (traversable / non-traversable)
+                    num_scenes = (
+                        len(self.WEATHER_CLASSES) * len(self.LIGHT_CLASSES) * len(self.ROAD_CLASSES)
+                    )
+                    if self.use_material_cls:
+                        num_scenes *= len(self.MATERIAL_CLASSES)
+                    self.scene_prototypes = nn.Parameter(
+                        torch.randn(num_scenes, 2, self.text_dim)
+                    )
+                    nn.init.trunc_normal_(self.scene_prototypes, std=0.02)
+                else:
+                    # linear_text 方案：仍使用 text encoder 生成场景原型
+                    # 需要初始化属性文本 embedding (仅用于生成场景原型)
+                    self._init_attribute_embeddings(context_length)
 
     def _init_attribute_embeddings(self, context_length):
         """初始化场景属性的文本嵌入。"""
@@ -492,11 +613,17 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         self.attr_t0 = {}
         self.attr_I = {}
 
-        for name, classes in [
+        # 基础属性列表
+        attr_list = [
             ('weather', self.WEATHER_CLASSES),
             ('road', self.ROAD_CLASSES),
             ('light', self.LIGHT_CLASSES),
-        ]:
+        ]
+        # 如果启用材质分类，添加材质属性
+        if self.use_material_cls:
+            attr_list.append(('material', self.MATERIAL_CLASSES))
+
+        for name, classes in attr_list:
             self.attr_texts[name] = torch.cat([
                 tokenize(c, context_length=context_length) for c in classes
             ]).to('cuda')
@@ -566,9 +693,16 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
 
         # ======== 3. 生成文本嵌入 ========
         if self.prompt_cls:
-            text_embeddings, global_feat = self._generate_dynamic_text_embeddings(
-                global_feat, b_size
-            )
+            if self.prompt_cls_type == 'learnable_only':
+                # learnable_only 模式：直接使用可学习的类别原型向量
+                # self.learnable_class_prototypes: [2, text_dim] -> [B, 2, text_dim]
+                text_embeddings = self.learnable_class_prototypes.unsqueeze(0).expand(b_size, -1, -1)
+                # global_feat 保持不变，不需要返回额外的分类信息
+                global_feat = (global_feat, None, None)
+            else:
+                text_embeddings, global_feat = self._generate_dynamic_text_embeddings(
+                    global_feat, b_size
+                )
         else:
             # 根据是否使用可学习 prompt
             context = self.contexts if self.use_learnable_prompt else None
@@ -632,162 +766,353 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
     def switch_to_deploy(self):
         """
         切换到部署模式：预计算所有文本嵌入，并删除 Text Encoder 以节省资源。
+
+        根据 prompt_cls_type 执行不同的缓存策略:
+        - 'text_encoder': 缓存属性 embeddings + 场景原型，删除 text encoder
+        - 'linear': 直接使用可学习的 scene_prototypes，删除 text encoder
+        - 'linear_text': 缓存场景原型，删除 text encoder
+        - 'learnable_only': 直接使用 learnable_class_prototypes，删除 text encoder
         """
         if self.is_deploy:
             return
 
-        print("Switching to deployment mode: Caching text embeddings...")
-        
+        print(f"Switching to deployment mode (prompt_cls_type={self.prompt_cls_type})...")
+
         # 确保处于评估模式
         self.eval()
-        self.text_encoder.eval()
-        
+
         with torch.no_grad():
-            # 1. 缓存属性锚点 (用于分类)
-            # self.cached_attr_embs: {'weather': [4, D], 'light': [3, D], ...}
-            if not hasattr(self, 'cached_attr_embs'):
-                self.cached_attr_embs = nn.ParameterDict()
-                
-            for name in ['weather', 'light', 'road']:
-                # 获取该属性下的所有类别文本和对应的 Prompt
-                tokens = self.attr_texts[name] 
-                prompt = getattr(self, f"{name}_prompt")
-                
-                # 编码并保存
-                embs = self.text_encoder(tokens, context=prompt)
-                # 注册为 buffer (不参与梯度更新，但在 state_dict 中)
-                self.register_buffer(f"cached_{name}_embs", embs)
+            if self.prompt_cls_type == 'learnable_only':
+                # learnable_only 方案：直接使用可学习的类别原型
+                # 将 learnable_class_prototypes 注册为 buffer
+                self.register_buffer("cached_class_prototypes", self.learnable_class_prototypes.data.clone())
 
-            # 2. 缓存 24 个组合原型 (用于分割)
-            # 生成 24 个 Token 组合
-            if not hasattr(self, 'all_combinations'):
-                self.all_combinations = list(itertools.product(
-                    self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
-                ))
-            
-            prompts = []
-            for w, l, r in self.all_combinations:
-                prompts.append(f"A {w} scene during {l} on a {r}, ")
-            
-            tokens = tokenize(prompts, context_length=self.context_length).to(next(self.parameters()).device)
-            
-            # 分别编码 Traversable 和 Notraversable
-            trav_embs = self.text_encoder(tokens, context=self.contexts_traversable)
-            notrav_embs = self.text_encoder(tokens, context=self.contexts_notraversable)
-            
-            # 拼接: [24, 2, D]
-            final_prototypes = torch.stack([trav_embs, notrav_embs], dim=1)
-            self.register_buffer("cached_prototypes", final_prototypes)
+            elif self.prompt_cls_type == 'text_encoder':
+                # 原始方案：缓存属性 embeddings + 场景原型
+                self.text_encoder.eval()
 
-        # 3. 删除 Text Encoder !!!
-        # 注意：这会破坏训练能力，仅用于推理
-        del self.text_encoder
-        if hasattr(self, 'text_encoder'): # 双重保险
+                # 1. 缓存属性锚点 (用于 CLIP 相似度分类)
+                if not hasattr(self, 'cached_attr_embs'):
+                    self.cached_attr_embs = nn.ParameterDict()
+
+                for name in ['weather', 'light', 'road']:
+                    tokens = self.attr_texts[name]
+                    prompt = getattr(self, f"{name}_prompt")
+                    embs = self.text_encoder(tokens, context=prompt)
+                    self.register_buffer(f"cached_{name}_embs", embs)
+
+                # 2. 缓存 24 个组合原型
+                final_prototypes = self._cache_prototypes_with_text_encoder()
+                self.register_buffer("cached_prototypes", final_prototypes)
+
+            elif self.prompt_cls_type == 'linear':
+                # Linear 方案：直接使用可学习的 scene_prototypes
+                # 将 scene_prototypes 注册为 buffer (转为不可训练)
+                self.register_buffer("cached_prototypes", self.scene_prototypes.data.clone())
+
+            else:  # linear_text
+                # 混合方案：使用 text encoder 生成场景原型
+                self.text_encoder.eval()
+                final_prototypes = self._cache_prototypes_with_text_encoder()
+                self.register_buffer("cached_prototypes", final_prototypes)
+
+        # 删除 Text Encoder (linear 模式也删除，虽然它本来就不用)
+        if hasattr(self, 'text_encoder') and self.text_encoder is not None:
+            del self.text_encoder
             self.text_encoder = None
-        
+
         # 标记为部署模式
         self.is_deploy = True
-        print("Text Encoder removed. Model is ready for inference.")
+        print("Model is ready for inference.")
+
+    def _cache_prototypes_with_text_encoder(self):
+        """使用 text encoder 缓存 24 个场景原型。"""
+        if not hasattr(self, 'all_combinations'):
+            self.all_combinations = list(itertools.product(
+                self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
+            ))
+
+        prompts = [f"A {w} scene during {l} on a {r}, " for w, l, r in self.all_combinations]
+        tokens = tokenize(prompts, context_length=self.context_length).to(next(self.parameters()).device)
+
+        trav_embs = self.text_encoder(tokens, context=self.contexts_traversable)
+        notrav_embs = self.text_encoder(tokens, context=self.contexts_notraversable)
+
+        # 拼接: [24, 2, D]
+        return torch.stack([trav_embs, notrav_embs], dim=1)
 
     def _generate_dynamic_text_embeddings(self, global_feat, b_size):
         """生成动态场景感知文本嵌入。
-        
+
         根据图像特征预测天气/光照/路面属性，构建动态提示。
+        支持三种 prompt_cls_type:
+        - 'text_encoder': 使用 CLIP text encoder 编码属性文本进行分类 + 生成场景原型
+        - 'linear': 使用 3 个 linear 分类器 + 24 个可学习场景向量
+        - 'linear_text': 使用 3 个 linear 分类器 + text encoder 生成场景原型
+
         支持 'hard' (argmax) 和 'soft' (weighted sum) 两种模式。
         支持 deploy 模式加速。
-        
+
         Args:
             global_feat: 全局图像特征 [B, 1, C]
             b_size: 批次大小
-            
+
         Returns:
             tuple: (文本嵌入, 更新后的全局特征)
         """
         # ==================== 部署模式 (极速推理) ====================
         if self.is_deploy:
-            # 1. 计算属性概率 (使用缓存的 cached_attr_embs)
-            image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
-            attr_probs = {}
-            
-            # 用于返回给外部 (保持接口一致性，但不需要 gradient)
-            attr_embeddings_dummy = {} 
-            attr_logits_dummy = {}
-            
-            for name in ['weather', 'light', 'road']:
-                # 直接从 buffer 读取
-                embs = getattr(self, f"cached_{name}_embs") # [Num_Class, D]
+            return self._generate_dynamic_text_embeddings_deploy(global_feat, b_size)
+
+        # ==================== 训练/普通推理模式 ====================
+        # 根据 prompt_cls_type 选择不同的分类和原型生成路径
+        if self.prompt_cls_type == 'text_encoder':
+            return self._generate_text_encoder_embeddings(global_feat, b_size)
+        elif self.prompt_cls_type == 'linear':
+            return self._generate_linear_embeddings(global_feat, b_size)
+        else:  # linear_text
+            return self._generate_linear_text_embeddings(global_feat, b_size)
+
+    def _generate_dynamic_text_embeddings_deploy(self, global_feat, b_size):
+        """部署模式下的动态文本嵌入生成（使用缓存）。"""
+        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
+        attr_probs = {}
+        attr_embeddings_dummy = {}
+        attr_logits_dummy = {}
+
+        # 构建属性名列表
+        attr_names = ['weather', 'light', 'road']
+        if self.use_material_cls:
+            attr_names.append('material')
+
+        if self.prompt_cls_type == 'text_encoder':
+            # 使用缓存的 text encoder embeddings
+            for name in attr_names:
+                embs = getattr(self, f"cached_{name}_embs")
                 attr_embeddings_dummy[name] = embs
-                
-                # 计算 logits
                 logits = torch.einsum('bc,nc->bn', image_feature, F.normalize(embs, dim=-1, p=2))
                 attr_logits_dummy[name] = logits
-                
-                # 计算概率
+                attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
+        else:
+            # linear / linear_text: 使用可学习类别原型 (余弦相似度)
+            prototypes = {
+                'weather': self.weather_prototypes,
+                'light': self.light_prototypes,
+                'road': self.road_prototypes,
+            }
+            if self.use_material_cls:
+                prototypes['material'] = self.material_prototypes
+            for name, proto in prototypes.items():
+                proto_norm = F.normalize(proto, dim=-1, p=2)
+                logits = torch.matmul(image_feature, proto_norm.T)
+                attr_logits_dummy[name] = logits
+                attr_embeddings_dummy[name] = None  # linear 模式没有属性 embedding
                 attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
 
-            # 2. 计算联合概率 P(w,l,r) -> [B, 24]
-            # w: weather(4), l: light(3), r: road(2) -> wlr(24)
+        # 计算联合概率
+        if self.use_material_cls:
             joint_probs = torch.einsum(
-                'bw,bl,br->bwlr', 
+                'bw,bl,br,bm->bwlrm',
+                attr_probs['weather'], attr_probs['light'], attr_probs['road'], attr_probs['material']
+            ).reshape(b_size, -1)
+        else:
+            joint_probs = torch.einsum(
+                'bw,bl,br->bwlr',
                 attr_probs['weather'], attr_probs['light'], attr_probs['road']
             ).reshape(b_size, -1)
 
-            # 3. 加权求和 (使用缓存的 cached_prototypes)
-            # cached_prototypes: [24, 2, D] -> [B, 2, D]
-            text_embeddings = torch.einsum('bk,kcd->bcd', joint_probs, self.cached_prototypes)
-            
-            return text_embeddings, (global_feat, attr_embeddings_dummy, attr_logits_dummy)
+        # 应用 TopK 过滤 (训练/测试使用不同的 K 值)
+        joint_probs = self._apply_topk_to_joint_probs(joint_probs)
 
-        # ==================== 训练/普通推理模式 ====================
+        # 使用缓存的场景原型
+        text_embeddings = torch.einsum('bk,kcd->bcd', joint_probs, self.cached_prototypes)
 
-        # 属性配置: (名称, 提示向量, 类别列表)
+        return text_embeddings, (global_feat, attr_embeddings_dummy, attr_logits_dummy)
+
+    def _generate_text_encoder_embeddings(self, global_feat, b_size):
+        """使用 text encoder 的原始方案。"""
+        # 属性配置
         attr_configs = [
             ('weather', self.weather_prompt, self.WEATHER_CLASSES),
             ('light', self.light_prompt, self.LIGHT_CLASSES),
             ('road', self.road_prompt, self.ROAD_CLASSES),
         ]
+        if self.use_material_cls:
+            attr_configs.append(('material', self.material_prompt, self.MATERIAL_CLASSES))
 
-        # 归一化图像特征
         image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)
-
         attr_embeddings = {}
         attr_logits = {}
-        attr_preds = {} # for hard mode
-        attr_probs = {} # for soft mode
+        attr_preds = {}
+        attr_probs = {}
 
-        # 1. 属性分类 (Hard & Soft 共用)
+        # 1. 属性分类 (使用 CLIP 余弦相似度)
         for name, prompt, classes in attr_configs:
-            # 编码属性文本
             emb = self.text_encoder(
                 self.attr_texts[name], context=prompt
             ).expand(b_size, -1, -1)
             attr_embeddings[name] = emb
 
-            # 归一化并计算 logits (余弦相似度)
             emb_norm = F.normalize(emb, dim=-1, p=2)
             logits = torch.einsum('bc,bnc->bn', image_feature, emb_norm)
             attr_logits[name] = logits
 
             if self.prompt_cls_mode == 'hard':
                 attr_preds[name] = logits.argmax(dim=1)
-            else: # soft
+            else:
                 attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
 
         # 2. 生成文本嵌入
-        text_embeddings = None
-        
+        text_embeddings = self._generate_prototypes_with_text_encoder(
+            global_feat, b_size, attr_preds, attr_probs
+        )
+
+        return text_embeddings, (global_feat, attr_embeddings, attr_logits)
+
+    def _generate_linear_embeddings(self, global_feat, b_size):
+        """使用可学习类别原型 + 可学习场景向量的消融方案。
+
+        使用余弦相似度进行分类，与 text_encoder 模式保持一致，可复用 /self.tau。
+        """
+        # 归一化图像特征 (与 text_encoder 模式一致)
+        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)  # [B, C]
+        attr_logits = {}
+        attr_preds = {}
+        attr_probs = {}
+
+        # 1. 使用可学习类别原型进行属性分类 (余弦相似度)
+        prototypes = {
+            'weather': self.weather_prototypes,  # [4, C]
+            'light': self.light_prototypes,      # [3, C]
+            'road': self.road_prototypes,        # [2, C]
+        }
+        if self.use_material_cls:
+            prototypes['material'] = self.material_prototypes  # [10, C]
+
+        for name, proto in prototypes.items():
+            # 归一化类别原型
+            proto_norm = F.normalize(proto, dim=-1, p=2)
+            # 余弦相似度: [B, C] x [C, num_classes] -> [B, num_classes]
+            logits = torch.matmul(image_feature, proto_norm.T)
+            attr_logits[name] = logits
+
+            if self.prompt_cls_mode == 'hard':
+                attr_preds[name] = logits.argmax(dim=1)
+            else:
+                # 复用 tau 温度系数，与 text_encoder 模式一致
+                attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
+
+        # 2. 使用可学习的场景原型
         if self.prompt_cls_mode == 'hard':
-            # === Hard Mode (Argmax) ===
+            # Hard mode: 选择对应的场景原型
+            if self.use_material_cls:
+                # 计算场景索引: w * 60 + l * 20 + r * 10 + m (240 种组合)
+                scene_indices = (
+                    attr_preds['weather'] * 60 +
+                    attr_preds['light'] * 20 +
+                    attr_preds['road'] * 10 +
+                    attr_preds['material']
+                )  # [B]
+            else:
+                # 计算场景索引: w * 6 + l * 2 + r (24 种组合)
+                scene_indices = (
+                    attr_preds['weather'] * 6 +
+                    attr_preds['light'] * 2 +
+                    attr_preds['road']
+                )  # [B]
+            text_embeddings = self.scene_prototypes[scene_indices]  # [B, 2, D]
+        else:
+            # Soft mode: 加权求和
+            if self.use_material_cls:
+                joint_probs = torch.einsum(
+                    'bw,bl,br,bm->bwlrm',
+                    attr_probs['weather'], attr_probs['light'], attr_probs['road'], attr_probs['material']
+                ).reshape(b_size, -1)  # [B, 240]
+            else:
+                joint_probs = torch.einsum(
+                    'bw,bl,br->bwlr',
+                    attr_probs['weather'], attr_probs['light'], attr_probs['road']
+                ).reshape(b_size, -1)  # [B, 24]
+
+            # 应用 TopK 过滤 (训练/测试使用不同的 K 值)
+            joint_probs = self._apply_topk_to_joint_probs(joint_probs)
+
+            text_embeddings = torch.einsum('bk,kcd->bcd', joint_probs, self.scene_prototypes)
+
+        # 注意：linear 模式没有 attr_embeddings，用 None 填充
+        attr_names = ['weather', 'light', 'road']
+        if self.use_material_cls:
+            attr_names.append('material')
+        attr_embeddings = {name: None for name in attr_names}
+
+        return text_embeddings, (global_feat, attr_embeddings, attr_logits)
+
+    def _generate_linear_text_embeddings(self, global_feat, b_size):
+        """使用可学习类别原型 + text encoder 原型的混合方案。
+
+        分类使用余弦相似度，场景原型由 text encoder 生成。
+        """
+        # 归一化图像特征 (与 text_encoder 模式一致)
+        image_feature = F.normalize(global_feat.squeeze(1), dim=-1, p=2)  # [B, C]
+        attr_logits = {}
+        attr_preds = {}
+        attr_probs = {}
+
+        # 1. 使用可学习类别原型进行属性分类 (余弦相似度)
+        prototypes = {
+            'weather': self.weather_prototypes,  # [4, C]
+            'light': self.light_prototypes,      # [3, C]
+            'road': self.road_prototypes,        # [2, C]
+        }
+        if self.use_material_cls:
+            prototypes['material'] = self.material_prototypes  # [10, C]
+
+        for name, proto in prototypes.items():
+            # 归一化类别原型
+            proto_norm = F.normalize(proto, dim=-1, p=2)
+            # 余弦相似度
+            logits = torch.matmul(image_feature, proto_norm.T)
+            attr_logits[name] = logits
+
+            if self.prompt_cls_mode == 'hard':
+                attr_preds[name] = logits.argmax(dim=1)
+            else:
+                # 复用 tau 温度系数
+                attr_probs[name] = F.softmax(logits / (self.tau if self.prompt_cls_temperature_mode == 'tau' else self.ot_score_prior_temperature), dim=1)
+
+        # 2. 使用 text encoder 生成场景原型
+        text_embeddings = self._generate_prototypes_with_text_encoder(
+            global_feat, b_size, attr_preds, attr_probs
+        )
+
+        # 注意：linear_text 模式没有 attr_embeddings，用 None 填充
+        attr_names = ['weather', 'light', 'road']
+        if self.use_material_cls:
+            attr_names.append('material')
+        attr_embeddings = {name: None for name in attr_names}
+
+        return text_embeddings, (global_feat, attr_embeddings, attr_logits)
+
+    def _generate_prototypes_with_text_encoder(self, global_feat, b_size, attr_preds, attr_probs):
+        """使用 text encoder 生成场景原型（text_encoder 和 linear_text 模式共用）。"""
+        if self.prompt_cls_mode == 'hard':
+            # Hard Mode: 为每个样本生成独立的 prompt
             tokenized_prompts = []
             for i in range(b_size):
-                dynamic_prefix = (
-                    f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
-                    f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
-                    f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]}, "
-                )
+                if self.use_material_cls:
+                    dynamic_prefix = (
+                        f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
+                        f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
+                        f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]} "
+                        f"with {self.MATERIAL_CLASSES[attr_preds['material'][i]]} surface, "
+                    )
+                else:
+                    dynamic_prefix = (
+                        f"A {self.WEATHER_CLASSES[attr_preds['weather'][i]]} scene "
+                        f"during {self.LIGHT_CLASSES[attr_preds['light'][i]]} "
+                        f"on a {self.ROAD_CLASSES[attr_preds['road'][i]]}, "
+                    )
 
-                # 编码可通行/不可通行嵌入
-                # 注意：这里实时 tokenize 会比较慢，但在 hard mode 下每张图 prompt 不一样，难以 batch
                 trav_token = tokenize(
                     dynamic_prefix, context_length=self.context_length
                 ).to(global_feat.device)
@@ -798,56 +1123,66 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 ).to(global_feat.device)
                 notrav_emb = self.text_encoder(notrav_token, context=self.contexts_notraversable)
 
-                tokenized_prompts.append(
-                    torch.cat([trav_emb, notrav_emb], dim=0)
-                )
-            text_embeddings = torch.stack(tokenized_prompts, dim=0)
-            
+                tokenized_prompts.append(torch.cat([trav_emb, notrav_emb], dim=0))
+            return torch.stack(tokenized_prompts, dim=0)
         else:
-            # === Soft Mode (Weighted Sum) ===
-            # 1. 准备所有可能的属性组合
-            if not hasattr(self, 'all_combinations'):
-                self.all_combinations = list(itertools.product(
-                    self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
-                ))
-            
-            # 2. 计算每个组合的联合概率 [B, 24]
-            joint_probs = torch.einsum(
-                'bw,bl,br->bwlr', 
-                attr_probs['weather'], attr_probs['light'], attr_probs['road']
-            ).reshape(b_size, -1)
+            # Soft Mode: 加权求和场景原型 (24 或 240 个)
+            # 根据 use_material_cls 决定组合方式
+            cache_key = 'all_combinations_with_material' if self.use_material_cls else 'all_combinations'
+            tokens_key = 'all_combinations_tokens_with_material' if self.use_material_cls else 'all_combinations_tokens'
 
-            # 3. 编码所有 24 个原型句子 (Prototypes)
-            # 注意：由于 context 是 learnable 的，训练时需要在 forward 中实时计算
-            
-            # 缓存 tokenized tokens 以避免重复 tokenize
-            if not hasattr(self, 'all_combinations_tokens'):
-                prompts = []
-                for w, l, r in self.all_combinations:
-                    prompts.append(f"A {w} scene during {l} on a {r}, ")
-                self.all_combinations_tokens = tokenize(
-                    prompts, context_length=self.context_length
-                ).to(global_feat.device)
-            
-            # 确保 tokens 在正确的 device
-            if self.all_combinations_tokens.device != global_feat.device:
-                self.all_combinations_tokens = self.all_combinations_tokens.to(global_feat.device)
+            if not hasattr(self, cache_key):
+                if self.use_material_cls:
+                    combinations = list(itertools.product(
+                        self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES, self.MATERIAL_CLASSES
+                    ))
+                else:
+                    combinations = list(itertools.product(
+                        self.WEATHER_CLASSES, self.LIGHT_CLASSES, self.ROAD_CLASSES
+                    ))
+                setattr(self, cache_key, combinations)
 
-            # 批量编码 24 个原型 [24, D]
-            prototypes_trav = self.text_encoder(self.all_combinations_tokens, context=self.contexts_traversable)
-            prototypes_notrav = self.text_encoder(self.all_combinations_tokens, context=self.contexts_notraversable)
+            combinations = getattr(self, cache_key)
 
-            # 4. 加权求和得到最终 Embedding
-            # [B, 24] x [24, D] -> [B, D]
+            # 计算联合概率
+            if self.use_material_cls:
+                joint_probs = torch.einsum(
+                    'bw,bl,br,bm->bwlrm',
+                    attr_probs['weather'], attr_probs['light'], attr_probs['road'], attr_probs['material']
+                ).reshape(b_size, -1)
+            else:
+                joint_probs = torch.einsum(
+                    'bw,bl,br->bwlr',
+                    attr_probs['weather'], attr_probs['light'], attr_probs['road']
+                ).reshape(b_size, -1)
+
+            # 应用 TopK 过滤 (训练/测试使用不同的 K 值)
+            joint_probs = self._apply_topk_to_joint_probs(joint_probs)
+
+            # 缓存 tokenized tokens
+            if not hasattr(self, tokens_key):
+                if self.use_material_cls:
+                    prompts = [
+                        f"A {w} scene during {l} on a {r} with {m} surface, "
+                        for w, l, r, m in combinations
+                    ]
+                else:
+                    prompts = [f"A {w} scene during {l} on a {r}, " for w, l, r in combinations]
+                tokens = tokenize(prompts, context_length=self.context_length).to(global_feat.device)
+                setattr(self, tokens_key, tokens)
+
+            tokens = getattr(self, tokens_key)
+            if tokens.device != global_feat.device:
+                tokens = tokens.to(global_feat.device)
+                setattr(self, tokens_key, tokens)
+
+            prototypes_trav = self.text_encoder(tokens, context=self.contexts_traversable)
+            prototypes_notrav = self.text_encoder(tokens, context=self.contexts_notraversable)
+
             final_trav_emb = torch.matmul(joint_probs, prototypes_trav)
             final_notrav_emb = torch.matmul(joint_probs, prototypes_notrav)
 
-            # 拼接结果 [B, 2, D]
-            text_embeddings = torch.stack([final_trav_emb, final_notrav_emb], dim=1)
-
-        updated_global_feat = (global_feat, attr_embeddings, attr_logits)
-
-        return text_embeddings, updated_global_feat
+            return torch.stack([final_trav_emb, final_notrav_emb], dim=1)
 
     def _is_primary_rank(self):
         return (not torch.distributed.is_available()) or (not torch.distributed.is_initialized()) or torch.distributed.get_rank() == 0
@@ -996,7 +1331,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             sne_for_decode = list(self.neck(sne_for_decode))
 
         # ======== 场景属性损失 ========
-        if self.prompt_cls:
+        # learnable_only 模式没有场景属性分类，跳过
+        if self.prompt_cls and self.prompt_cls_type != 'learnable_only':
             global_feat, losses_attr = self._compute_attribute_losses(global_feat, img_metas)
             losses.update(losses_attr)
 
@@ -1218,6 +1554,25 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 fused = torch.max(new_x, new_sne)
                 fused = fused.permute(0, 2, 1).contiguous().view(b, f, h, w)
                 x_orig[i] = fused
+            elif self.ot_fuse_mode == 'config':
+                # 基于 OT 传输计划的置信度加权融合
+                # pi_img, pi_sne: [B*H*W, K] -> reshape to [B, H*W, K]
+                pi_img_reshaped = pi_img.view(b, h * w, -1)
+                pi_sne_reshaped = pi_sne.view(b, h * w, -1)
+
+                # 计算置信度: [B, H*W]
+                conf_img = self._compute_confidence_from_entropy(pi_img_reshaped)
+                conf_sne = self._compute_confidence_from_entropy(pi_sne_reshaped)
+
+                # 归一化置信度作为融合权重
+                conf_sum = conf_img + conf_sne + 1e-8
+                weight_img = (conf_img / conf_sum).unsqueeze(-1)  # [B, H*W, 1]
+                weight_sne = (conf_sne / conf_sum).unsqueeze(-1)  # [B, H*W, 1]
+
+                # new_x, new_sne: [B, H*W, C]
+                fused = weight_img * new_x + weight_sne * new_sne
+                fused = fused.permute(0, 2, 1).contiguous().view(b, f, h, w)
+                x_orig[i] = fused
 
             losses.update(add_prefix({'loss': loss_x}, f'img_ot_{i}'))
             losses.update(add_prefix({'loss': loss_sne}, f'sne_ot_{i}'))
@@ -1237,6 +1592,68 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                 _score_and_loss(new_sne, f'ot_feat_sne_{i}')
 
         return x_orig, losses, pi_maps
+
+    def _apply_topk_to_joint_probs(self, joint_probs):
+        """
+        对 joint_probs 应用 TopK 过滤，类似 dropout 的训练/测试行为差异。
+        Args:
+            joint_probs: [B, K] 的联合概率分布
+        Returns:
+            filtered_probs: [B, K] 过滤后的概率分布 (TopK 外的置为 0 并重新归一化)
+        """
+        # 根据训练/测试模式选择 TopK 值
+        if self.training:
+            topk = self.prompt_cls_topk_train
+        else:
+            topk = self.prompt_cls_topk_test
+
+        # 如果 topk 为 None，保持原来的行为
+        if topk is None:
+            return joint_probs
+
+        # 确保 topk 不超过类别数
+        k = min(topk, joint_probs.shape[-1])
+
+        # 获取 TopK 的值和索引
+        topk_vals, topk_indices = torch.topk(joint_probs, k, dim=-1)
+
+        # 创建 mask，只保留 TopK
+        mask = torch.zeros_like(joint_probs)
+        mask.scatter_(-1, topk_indices, 1.0)
+
+        # 过滤并重新归一化
+        filtered_probs = joint_probs * mask
+        filtered_probs = filtered_probs / (filtered_probs.sum(dim=-1, keepdim=True) + 1e-8)
+
+        return filtered_probs
+
+    def _compute_confidence_from_entropy(self, pi):
+        """
+        计算基于信息熵的置信度。
+        Args:
+            pi: [B, N, K] 或 [B, K] 的任意 Logits 或 Probability
+        Returns:
+            confidence: [B, N] (如果输入是三维) 或 [B] (如果输入是二维)
+            取值范围 0.0 (完全不确定) ~ 1.0 (非常确信)
+        """
+        eps = 1e-10
+
+        # 强制归一化 (Self-Correction)
+        pi_sum = pi.sum(dim=-1, keepdim=True)
+        pi_norm = pi / (pi_sum + eps)
+
+        # 计算熵 H = -sum(p * log(p))
+        log_pi = torch.log(torch.clamp(pi_norm, min=eps))
+        entropy = -torch.sum(pi_norm * log_pi, dim=-1)
+
+        # 归一化熵 (Relative Entropy)
+        K = pi.shape[-1]
+        max_entropy = torch.log(torch.tensor(K, dtype=pi.dtype, device=pi.device))
+        normalized_entropy = entropy / max_entropy
+
+        # 转为置信度
+        confidence = 1.0 - normalized_entropy
+        return confidence
 
     def _compute_global_ot_loss(self, score, text_emb):
         """计算全局 OT 对齐损失。"""
@@ -1263,6 +1680,7 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
     def _get_attribute_targets(self, img_metas):
         """从元数据中获取属性标签。"""
         weather_list, light_list, road_list = [], [], []
+        material_list = [] if self.use_material_cls else None
 
         for meta in img_metas:
             scene_name = meta['ori_filename'].split('/')[1][1:].replace('_', '-')
@@ -1270,44 +1688,60 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
 
             weather_list.append(self.WEATHER_CLASSES.index(info['weather']))
             light_list.append(self.LIGHT_CLASSES.index(info['light']))
-            road_list.append(self.ROAD_CLASSES.index(
-                info['road'].split("_")[0] + ' road'
-            ))
+
+            # 道路格式: {paved/unpaved}_{material}_road
+            road_parts = info['road'].replace('_road', '').split('_')
+            road_list.append(self.ROAD_CLASSES.index(road_parts[0] + ' road'))
+
+            # 材质是中间部分 (可能有多个下划线，如 'paved_concrete_road')
+            if self.use_material_cls:
+                material = '_'.join(road_parts[1:])
+                material_list.append(self.MATERIAL_CLASSES.index(material))
 
         device = next(self.parameters()).device
-        return (
+        result = (
             torch.tensor(weather_list, device=device),
             torch.tensor(light_list, device=device),
             torch.tensor(road_list, device=device),
         )
+        if self.use_material_cls:
+            result = result + (torch.tensor(material_list, device=device),)
+        return result
 
     def _compute_attribute_losses(self, global_feat, img_metas):
-        """计算场景属性分类损失。"""
+        """计算场景属性分类损失。
+
+        根据 prompt_cls_type 计算不同的损失:
+        - 'text_encoder': 属性正则化损失 + 属性分类损失
+        - 'linear' / 'linear_text': 仅属性分类损失 (没有 text embedding，无法计算正则化)
+        """
         losses = {}
         global_feat_tensor, attr_embeddings, attr_logits = global_feat
 
         # 获取真实标签
-        attr_targets = dict(zip(
-            ['weather', 'light', 'road'],
-            self._get_attribute_targets(img_metas)
-        ))
+        attr_names = ['weather', 'light', 'road']
+        if self.use_material_cls:
+            attr_names.append('material')
+        attr_targets = dict(zip(attr_names, self._get_attribute_targets(img_metas)))
 
         # 统一计算属性损失
-        for name in ['weather', 'light', 'road']:
+        for name in attr_names:
             emb = attr_embeddings[name]
             logits = attr_logits[name]
             target = attr_targets[name]
 
-            # 属性正则化损失
-            score = torch.einsum(
-                'blc,kc->bkl', F.normalize(emb, dim=-1, p=2), self.attr_t0[name].detach()
-            )
-            reg_loss = F.cross_entropy(
-                score / self.tau, self.attr_I[name].expand(score.shape[0], -1), reduction='mean'
-            )
-            losses.update(add_prefix({'loss': reg_loss}, f'reg.{name}'))
+            # 属性正则化损失 (仅 text_encoder 模式)
+            # linear / linear_text 模式没有 attr_embeddings，跳过正则化
+            if emb is not None and self.prompt_cls_type == 'text_encoder':
+                score = torch.einsum(
+                    'blc,kc->bkl', F.normalize(emb, dim=-1, p=2), self.attr_t0[name].detach()
+                )
+                reg_loss = F.cross_entropy(
+                    score / self.tau, self.attr_I[name].expand(score.shape[0], -1), reduction='mean'
+                )
+                losses.update(add_prefix({'loss': reg_loss}, f'reg.{name}'))
 
-            # 属性分类损失
+            # 属性分类损失 (所有模式都计算)
             cls_loss = F.cross_entropy(logits / self.tau, target, reduction='mean')
             losses.update(add_prefix({'loss': cls_loss}, f'attr.{name}'))
 
@@ -1317,12 +1751,14 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
             self.acc_weather = (attr_logits['weather'].argmax(1) == attr_targets['weather']).sum().float() / total
             self.acc_light = (attr_logits['light'].argmax(1) == attr_targets['light']).sum().float() / total
             self.acc_road = (attr_logits['road'].argmax(1) == attr_targets['road']).sum().float() / total
+            if self.use_material_cls:
+                self.acc_material = (attr_logits['material'].argmax(1) == attr_targets['material']).sum().float() / total
 
         return global_feat_tensor, losses
 
     def _compute_regularization_losses(self, text_emb, img, global_feat, score_map=None, img_metas=None, gt_semantic_seg=None, pi_map=None):
         """计算正则化损失。
-        
+
         Args:
             text_emb: 文本嵌入
             img: 输入图像
@@ -1333,31 +1769,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         """
         losses = {}
 
-        # 提取真实的 global_feat tensor
-        if isinstance(global_feat, tuple):
-            global_feat = global_feat[0]
-
-        # 文本正则化
-        if self.textual_reg:
-            content_score = torch.einsum(
-                'blc,kc->bkl', F.normalize(text_emb, dim=-1, p=2), self.reg_T0.detach()
-            )
-            loss = F.cross_entropy(
-                content_score / self.tau,
-                self.reg_I.expand(content_score.shape[0], -1),
-                reduction='mean'
-            )
-            losses.update(add_prefix({'loss': loss}, 'reg.textual'))
-
-        # 视觉正则化
-        if self.visual_reg:
-            with torch.no_grad():
-                global_feat_0, _ = self.reg_E0.extract_feats(img)[-1]
-            loss = nn.MSELoss(reduction='mean')(global_feat, global_feat_0)
-            losses.update(add_prefix({'loss': loss}, 'reg.visual'))
-
         # Vision-Language 正则化 (基于 score_map)
-        if self.identity_head is not None and score_map is not None:
+        if self.use_score_map_reg and self.identity_head is not None and score_map is not None:
             # RGB score map 正则化
             if 'img' in score_map:
                 loss_score_map = self.identity_head.forward_train(
@@ -1396,6 +1809,35 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
                     pi_sne / self.tau, img_metas, gt_semantic_seg, self.train_cfg
                 )
                 losses.update(add_prefix(loss_pi_sne, 'pi_sne'))
+
+        # learnable_only 模式：跳过所有正则化损失 (无文本编码器可用于对齐)
+        if self.prompt_cls and self.prompt_cls_type == 'learnable_only':
+            return losses
+
+        # 提取真实的 global_feat tensor
+        if isinstance(global_feat, tuple):
+            global_feat = global_feat[0]
+
+        # 文本正则化
+        if self.textual_reg:
+            content_score = torch.einsum(
+                'blc,kc->bkl', F.normalize(text_emb, dim=-1, p=2), self.reg_T0.detach()
+            )
+            loss = F.cross_entropy(
+                content_score / self.tau,
+                self.reg_I.expand(content_score.shape[0], -1),
+                reduction='mean'
+            )
+            losses.update(add_prefix({'loss': loss}, 'reg.textual'))
+
+        # 视觉正则化
+        if self.visual_reg:
+            with torch.no_grad():
+                global_feat_0, _ = self.reg_E0.extract_feats(img)[-1]
+            loss = nn.MSELoss(reduction='mean')(global_feat, global_feat_0)
+            losses.update(add_prefix({'loss': loss}, 'reg.visual'))
+
+        
 
         return losses
 
@@ -1462,8 +1904,8 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         # 调试容器：仅在需要保存中间结果时初始化
         debug_store = {'pi_img': [], 'pi_sne': []} if return_debug else None
 
-        # 验证时计算属性准确率
-        if self.prompt_cls:
+        # 验证时计算属性准确率 (learnable_only 模式没有属性分类，跳过)
+        if self.prompt_cls and self.prompt_cls_type != 'learnable_only':
             self._compute_val_attribute_accuracy(global_feat, img_metas, img, sne, masks)
 
         # 分离特征
@@ -1567,28 +2009,32 @@ class tqt_EVA_CLIP(tqdm_EVA_CLIP):
         """验证时计算属性准确率。"""
         _, _, attr_logits = global_feat
 
+        # 构建属性名列表
+        attr_names = ['weather', 'light', 'road']
+        if self.use_material_cls:
+            attr_names.append('material')
+
         # 获取真实标签
-        attr_targets = dict(zip(
-            ['weather', 'light', 'road'],
-            self._get_attribute_targets(img_metas)
-        ))
+        attr_targets = dict(zip(attr_names, self._get_attribute_targets(img_metas)))
 
         with torch.no_grad():
             total = attr_targets['weather'].size(0)
-            attr_preds = {name: attr_logits[name].argmax(dim=1) for name in ['weather', 'light', 'road']}
+            attr_preds = {name: attr_logits[name].argmax(dim=1) for name in attr_names}
 
             self.val_acc_weather = (attr_preds['weather'] == attr_targets['weather']).sum().float() / total
             self.val_acc_light = (attr_preds['light'] == attr_targets['light']).sum().float() / total
             self.val_acc_road = (attr_preds['road'] == attr_targets['road']).sum().float() / total
+            if self.use_material_cls:
+                self.val_acc_material = (attr_preds['material'] == attr_targets['material']).sum().float() / total
 
             # 保存验证样本可视化
             if self.save_img_sne_sum_val < 10:
                 info = {
                     f'{name}_true': attr_targets[name].tolist()
-                    for name in ['weather', 'road', 'light']
+                    for name in attr_names
                 }
                 info.update({
                     f'{name}_pred': attr_preds[name].tolist()
-                    for name in ['weather', 'road', 'light']
+                    for name in attr_names
                 })
                 self.save_img_sne_merge(img, sne, img_metas, masks, info)
