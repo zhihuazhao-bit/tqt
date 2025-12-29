@@ -132,6 +132,7 @@ CONFIG_G3pMEAN="/root/tqdm/configs/ablation/exp_512_densevlm_sneotTrue_patchfpn_
 
 # F2pSoft-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, Tau)
 CKPT_F2pSoft_learnableT_promptTau="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251219_1354/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_2000.pth"  # TODO: 填入 checkpoint 路径
+CKPT_F2pSoft_learnableT_promptTaux4="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251227_2216x4/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/best_mIoU_iter_1000.pth"  # TODO: 填入 checkpoint 路径
 CONFIG_F2pSoft_learnableT_promptTau="configs/ablation/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau.py"
 CONFIG2ROAD_F2pSoft_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
 
@@ -351,6 +352,8 @@ run_test() {
 # run_test "H1pMEAN" "$CONFIG_H1pMEAN" "$CKPT_H1pMEAN"
 # run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
 # run_test "F2pSoft-learnableT-promptTau" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
+# run_test "F2pSoft-learnableT-promptTau" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTaux4"
+run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTaux4"
 # run_test "F2pSoft-learnableT-promptTau-linear" "$CONFIG_F2pSoft_learnableT_promptTau_linear" "$CKPT_F2pSoft_learnableT_promptTau_linear"
 # run_test "F2pSoft-learnableT-promptTau-linear_text" "$CONFIG_F2pSoft_learnableT_promptTau_linear_text" "$CKPT_F2pSoft_learnableT_promptTau_linear_text"
 # run_test "F2pSoft_learnableT_promptTau_224" "$CONFIG_F2pSoft_learnableT_promptTau_224" "$CKPT_F2pSoft_learnableT_promptTau_224"
@@ -418,16 +421,16 @@ run_test() {
 # ============================================================================
 # 预训练权重消融实验 - ORFD2ROAD 跨域测试 (ORFD训练 -> Road3D测试)
 # ============================================================================
-run_test "LearnableOnly-M2F-NoPretrain-2ROAD" "$CONFIG2ROAD_LearnableOnly_M2F_NoPretrain" "$CKPT_LearnableOnly_M2F_NoPretrain"
-run_test "P1-NoPretrain-2ROAD" "$CONFIG2ROAD_P1" "$CKPT_P1"
-run_test "P2-TextPretrain-2ROAD" "$CONFIG2ROAD_P2" "$CKPT_P2"
-run_test "P3-FullPretrain-2ROAD" "$CONFIG2ROAD_P3" "$CKPT_P3"
-run_test "P4-FullPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P4" "$CKPT_P4"
-run_test "P5-TextPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P5" "$CKPT_P5"
-run_test "P6-SNEOT-TextPretrain-2ROAD" "$CONFIG2ROAD_P6" "$CKPT_P6"
-run_test "P7-SNEOT-TextPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P7" "$CKPT_P7"
-run_test "P8-SNEOT-FullPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P8" "$CKPT_P8"
-run_test "F2pSoft-learnableT-promptTau-2ROAD" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
+# run_test "LearnableOnly-M2F-NoPretrain-2ROAD" "$CONFIG2ROAD_LearnableOnly_M2F_NoPretrain" "$CKPT_LearnableOnly_M2F_NoPretrain"
+# run_test "P1-NoPretrain-2ROAD" "$CONFIG2ROAD_P1" "$CKPT_P1"
+# run_test "P2-TextPretrain-2ROAD" "$CONFIG2ROAD_P2" "$CKPT_P2"
+# run_test "P3-FullPretrain-2ROAD" "$CONFIG2ROAD_P3" "$CKPT_P3"
+# run_test "P4-FullPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P4" "$CKPT_P4"
+# run_test "P5-TextPretrain-PromptCls-2ROAD" "$CONFIG2ROAD_P5" "$CKPT_P5"
+# run_test "P6-SNEOT-TextPretrain-2ROAD" "$CONFIG2ROAD_P6" "$CKPT_P6"
+# run_test "P7-SNEOT-TextPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P7" "$CKPT_P7"
+# run_test "P8-SNEOT-FullPretrain-NoPromptCls-2ROAD" "$CONFIG2ROAD_P8" "$CKPT_P8"
+# run_test "F2pSoft-learnableT-promptTau-2ROAD" "$CONFIG2ROAD_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau"
 
 echo ""
 echo "=========================================="

@@ -59,7 +59,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'LearnableOnly + M2F + NoPretrain',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/testing_eval_file_stats_20251225_230751.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/testing_eval_file_stats_20251225_235240.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_learnable_only_m2f_decoder_no_pretrain/20251225_1726/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain/test_results/exp_512_eva02_learnable_only_m2f_decoder_no_pretrain_road/testing_eval_file_stats_20251227_113246.csv',
     },
     # 2. P1-NoPretrain
     {
@@ -68,7 +68,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(proj) + M2F + NoPretrain',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_no_pretrain/20251226_1231/exp_512_eva02_sneProj_m2f_no_pretrain/test_results/exp_512_eva02_sneProj_m2f_no_pretrain/testing_eval_file_stats_20251227_074132.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_no_pretrain_road/20251226_1231/exp_512_eva02_sneProj_m2f_no_pretrain_road/test_results/exp_512_eva02_sneProj_m2f_no_pretrain_road/testing_eval_file_stats_20251227_084039.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_no_pretrain/20251226_1231/exp_512_eva02_sneProj_m2f_no_pretrain/test_results/exp_512_eva02_sneProj_m2f_no_pretrain_road/testing_eval_file_stats_20251227_122219.csv',
     },
     # 3. P2-TextPretrain
     {
@@ -77,7 +77,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(proj) + M2F + TextPretrain',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain/20251226_1236/exp_512_eva02_sneProj_m2f_text_pretrain/test_results/exp_512_eva02_sneProj_m2f_text_pretrain/testing_eval_file_stats_20251227_075401.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_road/20251226_1236/exp_512_eva02_sneProj_m2f_text_pretrain_road/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_road/testing_eval_file_stats_20251227_093226.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain/20251226_1236/exp_512_eva02_sneProj_m2f_text_pretrain/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_road/testing_eval_file_stats_20251227_131604.csv',
     },
     # 4. P7-SNEOT-TextPretrain-NoPromptCls
     {
@@ -86,7 +86,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(OT) + PatchFPN + TextPretrain + NoPromptCls',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/testing_eval_file_stats_20251227_084903.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls_road/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls_road/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls_road/testing_eval_file_stats_20251227_140734.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_no_promptcls_road/testing_eval_file_stats_20251227_175042.csv',
     },
     # 5. P5-TextPretrain-PromptCls
     {
@@ -95,7 +95,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(proj) + M2F + TextPretrain + PromptCls',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/testing_eval_file_stats_20251227_082559.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls_road/20251226_1240/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls_road/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls_road/testing_eval_file_stats_20251227_120949.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_text_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_text_pretrain_promptcls_road/testing_eval_file_stats_20251227_155918.csv',
     },
     # 6. P3-FullPretrain
     {
@@ -104,7 +104,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(proj) + M2F + FullPretrain',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain/test_results/exp_512_eva02_sneProj_m2f_full_pretrain/testing_eval_file_stats_20251227_080433.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_road/20251226_1238/exp_512_eva02_sneProj_m2f_full_pretrain_road/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_road/testing_eval_file_stats_20251227_102151.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_road/testing_eval_file_stats_20251227_141026.csv',
     },
     # 7. P8-SNEOT-FullPretrain-NoPromptCls
     {
@@ -113,7 +113,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(OT) + PatchFPN + FullPretrain + NoPromptCls',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/testing_eval_file_stats_20251227_090053.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls_road/20251226_1704/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls_road/test_results/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls_road/testing_eval_file_stats_20251227_150443.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/20251226_1248/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls/test_results/exp_512_eva02_sneot_patchfpn_full_pretrain_no_promptcls_road/testing_eval_file_stats_20251227_184652.csv',
     },
     # 8. P4-FullPretrain-PromptCls
     {
@@ -122,7 +122,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(proj) + M2F + FullPretrain + PromptCls',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/testing_eval_file_stats_20251227_081504.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls_road/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls_road/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls_road/testing_eval_file_stats_20251227_111453.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneProj_m2f_full_pretrain_promptcls/20251226_1240/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls/test_results/exp_512_eva02_sneProj_m2f_full_pretrain_promptcls_road/testing_eval_file_stats_20251227_150629.csv',
     },
     # 9. P6-SNEOT-TextPretrain
     {
@@ -131,7 +131,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(OT) + PatchFPN + TextPretrain + PromptCls',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain/testing_eval_file_stats_20251227_083747.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain_road/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain_road/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_road/testing_eval_file_stats_20251227_130938.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneot_patchfpn_text_pretrain/20251226_1248/exp_512_eva02_sneot_patchfpn_text_pretrain/test_results/exp_512_eva02_sneot_patchfpn_text_pretrain_road/testing_eval_file_stats_20251227_165541.csv',
     },
     # 10. F2pSoft-learnableT-promptTau-0.1 (Ours)
     {
@@ -140,7 +140,7 @@ ABLATION_EXPERIMENTS = [
         'desc': 'SNE(OT) + PatchFPN + piSup + PromptSoft + LearnableT',
         'csv_orfd': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251219_1354/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/testing_eval_file_stats_20251220_085925.csv',
         'csv_road3d': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1320/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251219_101507.csv',
-        'csv_orfd2road': '',
+        'csv_orfd2road': '/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/20251219_1354/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_learnableT_promptTau/test_results/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/testing_eval_file_stats_20251227_194202.csv',
     },
 ]
 
@@ -274,29 +274,29 @@ def process_dataset(dataset_name: str, output_path: str = None, verbose: bool = 
                 'No': idx,
                 'Exp': exp_id,
                 'Desc': exp_info['desc'],
-                'O_mAcc': f"{m_overall['mAcc'] * 100:.2f}",
-                'O_mRec': f"{m_overall['mRec'] * 100:.2f}",
-                'O_mF1': f"{m_overall['mF1'] * 100:.2f}",
-                'O_mIoU': f"{m_overall['mIoU'] * 100:.2f}",
-                'K_mAcc': f"{m_known['mAcc'] * 100:.2f}",
-                'K_mRec': f"{m_known['mRec'] * 100:.2f}",
-                'K_mF1': f"{m_known['mF1'] * 100:.2f}",
-                'K_mIoU': f"{m_known['mIoU'] * 100:.2f}",
-                'U_mAcc': f"{m_unknown['mAcc'] * 100:.2f}",
-                'U_mRec': f"{m_unknown['mRec'] * 100:.2f}",
-                'U_mF1': f"{m_unknown['mF1'] * 100:.2f}",
-                'U_mIoU': f"{m_unknown['mIoU'] * 100:.2f}",
-                'delta_mIoU': f"{delta_miou * 100:+.2f}",
+                'O_mAcc': f"{m_overall['mAcc'] * 100:.4f}",
+                'O_mRec': f"{m_overall['mRec'] * 100:.4f}",
+                'O_mF1': f"{m_overall['mF1'] * 100:.4f}",
+                'O_mIoU': f"{m_overall['mIoU'] * 100:.4f}",
+                'K_mAcc': f"{m_known['mAcc'] * 100:.4f}",
+                'K_mRec': f"{m_known['mRec'] * 100:.4f}",
+                'K_mF1': f"{m_known['mF1'] * 100:.4f}",
+                'K_mIoU': f"{m_known['mIoU'] * 100:.4f}",
+                'U_mAcc': f"{m_unknown['mAcc'] * 100:.4f}",
+                'U_mRec': f"{m_unknown['mRec'] * 100:.4f}",
+                'U_mF1': f"{m_unknown['mF1'] * 100:.4f}",
+                'U_mIoU': f"{m_unknown['mIoU'] * 100:.4f}",
+                'delta_mIoU': f"{delta_miou * 100:+.4f}",
             })
 
             if verbose:
-                print(f"    Overall: mAcc={m_overall['mAcc']*100:.2f}, mRec={m_overall['mRec']*100:.2f}, "
-                      f"mF1={m_overall['mF1']*100:.2f}, mIoU={m_overall['mIoU']*100:.2f}")
-                print(f"    Known:   mAcc={m_known['mAcc']*100:.2f}, mRec={m_known['mRec']*100:.2f}, "
-                      f"mF1={m_known['mF1']*100:.2f}, mIoU={m_known['mIoU']*100:.2f}")
-                print(f"    Unknown: mAcc={m_unknown['mAcc']*100:.2f}, mRec={m_unknown['mRec']*100:.2f}, "
-                      f"mF1={m_unknown['mF1']*100:.2f}, mIoU={m_unknown['mIoU']*100:.2f}")
-                print(f"    delta_mIoU: {delta_miou*100:+.2f}")
+                print(f"    Overall: mAcc={m_overall['mAcc']*100:.4f}, mRec={m_overall['mRec']*100:.4f}, "
+                      f"mF1={m_overall['mF1']*100:.4f}, mIoU={m_overall['mIoU']*100:.4f}")
+                print(f"    Known:   mAcc={m_known['mAcc']*100:.4f}, mRec={m_known['mRec']*100:.4f}, "
+                      f"mF1={m_known['mF1']*100:.4f}, mIoU={m_known['mIoU']*100:.4f}")
+                print(f"    Unknown: mAcc={m_unknown['mAcc']*100:.4f}, mRec={m_unknown['mRec']*100:.4f}, "
+                      f"mF1={m_unknown['mF1']*100:.4f}, mIoU={m_unknown['mIoU']*100:.4f}")
+                print(f"    delta_mIoU: {delta_miou*100:+.4f}")
 
         except Exception as e:
             if verbose:

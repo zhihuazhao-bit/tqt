@@ -125,8 +125,8 @@ def analyze_csv(csv_path: Path, dataset_name: str):
 
     def print_metrics(tag: str, mat: np.ndarray):
         mAcc, mrecall, mf1, miou, fwIoU, prec_road, rec_road, f1_road, iou_road = getScores_self(mat)
-        print(f"[{tag}] mAcc={mAcc:.3f}, mRecall={mrecall:.3f}, mF1={mf1:.3f}, mIoU={miou:.3f}, fwIoU={fwIoU:.3f}, "
-              f"prec_road={prec_road:.3f}, rec_road={rec_road:.3f}, f1_road={f1_road:.3f}, iou_road={iou_road:.3f}")
+        print(f"[{tag}] mAcc={mAcc:.4f}, mRecall={mrecall:.4f}, mF1={mf1:.4f}, mIoU={miou:.4f}, fwIoU={fwIoU:.4f}, "
+              f"prec_road={prec_road:.4f}, rec_road={rec_road:.4f}, f1_road={f1_road:.4f}, iou_road={iou_road:.4f}")
 
     print(f"Loaded {len(df)} image rows over {df['scene'].nunique()} scenes")
     print_metrics('overall', overall_mat)
@@ -153,7 +153,7 @@ def analyze_csv(csv_path: Path, dataset_name: str):
             scene_mat = subset_matrix(df[scene_mask])
             _, _, _, scene_miou, _, _, _, _, _ = getScores_self(scene_mat)
             num_samples = scene_mask.sum()
-            print(f"    {scene:20s} -> mIoU: {scene_miou*100:.2f}%  (n={num_samples})")
+            print(f"    {scene:20s} -> mIoU: {scene_miou*100:.4f}%  (n={num_samples})")
         else:
             print(f"    {scene:20s} -> (not found)")
 
@@ -229,7 +229,7 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
         for path in results.keys():
             miou = results[path].get(scene, None)
             if miou is not None:
-                row += f" {miou*100:>14.2f}%"
+                row += f" {miou*100:>14.4f}%"
             else:
                 row += f" {'-':>15}"
         print(row)
@@ -243,7 +243,7 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
         known_mious = [results[path].get(s, None) for s in all_scenes if s not in unknown_scenes]
         known_mious = [m for m in known_mious if m is not None]
         if known_mious:
-            row += f" {np.mean(known_mious)*100:>14.2f}%"
+            row += f" {np.mean(known_mious)*100:>14.4f}%"
         else:
             row += f" {'-':>15}"
     print(row)
@@ -254,7 +254,7 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
         unknown_mious = [results[path].get(s, None) for s in all_scenes if s in unknown_scenes]
         unknown_mious = [m for m in unknown_mious if m is not None]
         if unknown_mious:
-            row += f" {np.mean(unknown_mious)*100:>14.2f}%"
+            row += f" {np.mean(unknown_mious)*100:>14.4f}%"
         else:
             row += f" {'-':>15}"
     print(row)
@@ -265,7 +265,7 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
         all_mious = [results[path].get(s, None) for s in all_scenes]
         all_mious = [m for m in all_mious if m is not None]
         if all_mious:
-            row += f" {np.mean(all_mious)*100:>14.2f}%"
+            row += f" {np.mean(all_mious)*100:>14.4f}%"
         else:
             row += f" {'-':>15}"
     print(row)
@@ -348,17 +348,17 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
     print("-" * 150)
 
     for item in diff_list:
-        diff_str = f"{item['diff']:+.2f}%"
+        diff_str = f"{item['diff']:+.4f}%"
         if item['diff'] < 0:
             diff_str = f"\033[91m{diff_str}\033[0m"  # 红色表示负差异
         elif item['diff'] > 2:
             diff_str = f"\033[92m{diff_str}\033[0m"  # 绿色表示大于2%的提升
 
-        orfd_str = f"{item['orfd_bl']*100:.2f}%" if item['orfd_bl'] else "-"
-        m2f2_str = f"{item['m2f2']*100:.2f}%" if item['m2f2'] else "-"
-        rod_str = f"{item['rod']*100:.2f}%" if item['rod'] else "-"
+        orfd_str = f"{item['orfd_bl']*100:.4f}%" if item['orfd_bl'] else "-"
+        m2f2_str = f"{item['m2f2']*100:.4f}%" if item['m2f2'] else "-"
+        rod_str = f"{item['rod']*100:.4f}%" if item['rod'] else "-"
 
-        print(f"{item['scene']:<25} {item['type']:<5} {orfd_str:>10} {m2f2_str:>10} {rod_str:>10} {item['ours']:>9.2f}% {item['best_bl']:>9.2f}% {item['best_bl_name']:>8} {diff_str:>12}")
+        print(f"{item['scene']:<25} {item['type']:<5} {orfd_str:>12} {m2f2_str:>12} {rod_str:>12} {item['ours']:>11.4f}% {item['best_bl']:>11.4f}% {item['best_bl_name']:>8} {diff_str:>14}")
 
     print("-" * 150)
 
@@ -369,7 +369,7 @@ def print_scene_comparison(dataset_name: str, results: dict, unknown_scenes: lis
     avg_diff = np.mean([x['diff'] for x in diff_list]) if diff_list else 0
 
     print(f"统计: 提升 {positive} 个场景, 下降 {negative} 个场景, 持平 {zero} 个场景")
-    print(f"平均差异: {avg_diff:+.2f}%")
+    print(f"平均差异: {avg_diff:+.4f}%")
 
     # 返回低于 85% 的场景列表
     low_miou_scenes = [item['scene'] for item in diff_list if item['ours'] < 85]
@@ -418,14 +418,14 @@ for dataset_name, csv_paths in CSV_PATHS.items():
                     frame_list_sorted = sorted(frame_list, key=lambda x: x['miou'])
 
                     scene_miou = all_results[ours_path].get(scene, 0) * 100
-                    print(f"\n场景: {scene} (整体 mIoU: {scene_miou:.2f}%, 共 {len(frame_list)} 帧)")
+                    print(f"\n场景: {scene} (整体 mIoU: {scene_miou:.4f}%, 共 {len(frame_list)} 帧)")
                     print("-" * 100)
                     print(f"{'Rank':<6} {'Frame':<60} {'mIoU':>10}")
                     print("-" * 100)
 
                     # 显示最差的 20 帧
                     for i, frame in enumerate(frame_list_sorted[:20]):
-                        miou_str = f"{frame['miou']*100:.2f}%"
+                        miou_str = f"{frame['miou']*100:.4f}%"
                         if frame['miou'] < 0.7:
                             miou_str = f"\033[91m{miou_str}\033[0m"  # 红色
                         elif frame['miou'] < 0.8:

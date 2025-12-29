@@ -105,6 +105,7 @@ CONFIG_F2c_pi_mean_prob_soft="configs/ablation_road/exp_224_eva02_sneotTrue_patc
 # F2pSoft-learnableT-promptTau: 512 + EVA02 + SNE(OT, prior=prob, Learnable T, cos, mean, softunion) + Patch-FPN + piSup + Prompt(Soft, uses Tau)
 CKPT_F2pSoft_learnableT_promptTau_1="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1243/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_4000.pth" # TODO: 填入 checkpoint 路径
 CKPT_F2pSoft_learnableT_promptTau_0_1="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251218_1320/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_4000.pth" # TODO: 填入 checkpoint 路径
+CKPT_F2pSoft_learnableT_promptTau_0_1x4="/root/tqdm/work_dirs/ablation_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/20251227_2212x4/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau/best_mIoU_iter_5000.pth" # TODO: 填入 checkpoint 路径
 CONFIG_F2pSoft_learnableT_promptTau="configs/ablation_road/exp_512_eva02_sneotTrue_patchfpn_pisup_promptSoft_no_cos_mean_prob_softunion_road_learnableT_promptTau.py"
 
 # F2pSoft-learnableT-promptTau-linear: 512 + EVA02 + PromptCls(linear)
@@ -290,6 +291,7 @@ run_test() {
 # run_test "F2p-mean-cos-soft-512" "$CONFIG_F2pSoft_mean_cos_soft_512" "$CKPT_F2pSoft_mean_cos_soft_512"
 # run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_1"
 # run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_0_1" "train"
+run_test "F2pSoft-learnableT-promptTau" "$CONFIG_F2pSoft_learnableT_promptTau" "$CKPT_F2pSoft_learnableT_promptTau_0_1x4"
 # run_test "F2pSoft-proj-learnableT-promptTau" "$CONFIG_F2pSoft_proj_learnableT_promptTau" "$CKPT_F2pSoft_proj_learnableT_promptTau"
 
 # run_test "F2pSoft-learnableT-promptTau-linear-road" "$CONFIG_F2pSoft_learnableT_promptTau_linear" "$CKPT_F2pSoft_learnableT_promptTau_linear"
@@ -333,14 +335,14 @@ run_test() {
 # ============================================================================
 # 预训练权重消融实验 (填入 checkpoint 后取消注释运行) - Road3D
 # ============================================================================
-run_test "P1-NoPretrain-road" "$CONFIG_P1_road" "$CKPT_P1_road"
-run_test "P2-TextPretrain-road" "$CONFIG_P2_road" "$CKPT_P2_road"
-run_test "P3-FullPretrain-road" "$CONFIG_P3_road" "$CKPT_P3_road"
-run_test "P4-FullPretrain-PromptCls-road" "$CONFIG_P4_road" "$CKPT_P4_road"
-run_test "P5-TextPretrain-PromptCls-road" "$CONFIG_P5_road" "$CKPT_P5_road"
-run_test "P6-SNEOT-TextPretrain-road" "$CONFIG_P6_road" "$CKPT_P6_road"
-run_test "P7-SNEOT-TextPretrain-NoPromptCls-road" "$CONFIG_P7_road" "$CKPT_P7_road"
-run_test "P8-SNEOT-FullPretrain-NoPromptCls-road" "$CONFIG_P8_road" "$CKPT_P8_road"
+# run_test "P1-NoPretrain-road" "$CONFIG_P1_road" "$CKPT_P1_road"
+# run_test "P2-TextPretrain-road" "$CONFIG_P2_road" "$CKPT_P2_road"
+# run_test "P3-FullPretrain-road" "$CONFIG_P3_road" "$CKPT_P3_road"
+# run_test "P4-FullPretrain-PromptCls-road" "$CONFIG_P4_road" "$CKPT_P4_road"
+# run_test "P5-TextPretrain-PromptCls-road" "$CONFIG_P5_road" "$CKPT_P5_road"
+# run_test "P6-SNEOT-TextPretrain-road" "$CONFIG_P6_road" "$CKPT_P6_road"
+# run_test "P7-SNEOT-TextPretrain-NoPromptCls-road" "$CONFIG_P7_road" "$CKPT_P7_road"
+# run_test "P8-SNEOT-FullPretrain-NoPromptCls-road" "$CONFIG_P8_road" "$CKPT_P8_road"
 
 echo ""
 echo "=========================================="
